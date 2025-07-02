@@ -262,18 +262,49 @@ API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 # --- Chargement des données d'exemple pour les comparaisons (simulé ici) ---
 def load_sample_data():
     try:
+        st.write("Veuillez télécharger le fichier **application_train.csv** pour l'analyse.")
         uploaded_file = st.file_uploader("application_train.csv", type="csv")
 
-        df_sample = pd.read_csv(uploaded_file)
-        relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
-        df_sample_filtered = df_sample[df_sample.columns.intersection(relevant_cols_for_sample)].sample(1000, random_state=42)
+        if uploaded_file is not None:
+            with st.spinner(
+                    'Chargement et prétraitement du fichier... cela peut prendre un moment pour 158 Mo.'):
+                df_sample = pd.read_csv(uploaded_file)
+                st.success("Fichier chargé avec succès !")
 
-        if 'TARGET' in df_sample_filtered.columns:
-            df_sample_filtered = df_sample_filtered.drop(columns=['TARGET'])
-        return df_sample_filtered
-    except FileNotFoundError:
-        st.warning("Fichier 'application_train.csv' non trouvé pour les comparaisons. Les graphiques comparatifs pourraient être limités.")
-        # Générer un DataFrame d'exemple si le fichier n'est pas trouvé
+                if 'FEATURE_DESCRIPTIONS' in globals() and isinstance(FEATURE_DESCRIPTIONS,
+                                                                      dict) and FEATURE_DESCRIPTIONS:
+                    relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
+                    cols_to_keep = df_sample.columns.intersection(relevant_cols_for_sample)
+                else:
+                    st.warning(
+                        "`FEATURE_DESCRIPTIONS` n'est pas défini ou est vide. Toutes les colonnes du fichier seront considérées.")
+                    cols_to_keep = df_sample.columns
+
+                if not cols_to_keep.empty:
+                    n_samples = min(1000, len(df_sample))
+                    df_sample_filtered = df_sample[cols_to_keep].sample(n=n_samples,
+                                                                        random_state=42)
+
+                    if 'TARGET' in df_sample_filtered.columns:
+                        df_sample_filtered = df_sample_filtered.drop(columns=['TARGET'])
+                        st.info("La colonne 'TARGET' a été retirée du jeu de données filtré.")
+                else:
+                    st.warning(
+                        "Aucune colonne pertinente trouvée après filtrage. Le DataFrame résultant pourrait être vide.")
+                    df_sample_filtered = pd.DataFrame()
+
+                st.write(
+                    f"DataFrame échantillonné et filtré prêt : **{df_sample_filtered.shape[0]} lignes, {df_sample_filtered.shape[1]} colonnes.**")
+                st.dataframe(df_sample_filtered.head())
+
+            return df_sample_filtered
+        else:
+            st.info("En attente du téléchargement du fichier.")
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Une erreur est survenue lors du traitement du fichier : {e}")
+        st.warning(
+            "Veuillez vérifier que le fichier est au format CSV valide et qu'il correspond aux attentes.")
         data = {
             "EXT_SOURCE_1": np.random.rand(100),
             "EXT_SOURCE_2": np.random.rand(100),
