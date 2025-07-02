@@ -262,7 +262,7 @@ API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 # --- Chargement des données d'exemple pour les comparaisons (simulé ici) ---
 def load_sample_data():
     try:
-        uploaded_file = st.file_uploader("Projet+Mise+en+prod+-+home-credit-default-risk/application_train.csv", type="csv")
+        uploaded_file = st.file_uploader("application_train.csv", type="csv")
 
         df_sample = pd.read_csv(uploaded_file)
         relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
