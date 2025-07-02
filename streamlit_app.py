@@ -263,7 +263,9 @@ API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 @st.cache_data
 def load_sample_data():
     try:
-        df_sample = pd.read_csv("Projet+Mise+en+prod+-+home-credit-default-risk/application_train.csv")
+        uploaded_file = st.file_uploader("Projet+Mise+en+prod+-+home-credit-default-risk/application_train.csv", type="csv")
+
+        df_sample = pd.read_csv(uploaded_file)
         relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
         df_sample_filtered = df_sample[df_sample.columns.intersection(relevant_cols_for_sample)].sample(1000, random_state=42)
 
