@@ -9,7 +9,6 @@ import shap
 
 # --- Dictionnaire de traduction des noms de variables (intégré) ---
 FEATURE_DESCRIPTIONS = {
-    # Variables principales (Top 10)
     "EXT_SOURCE_1": "Score Source Externe 1 (information financière externe)",
     "EXT_SOURCE_3": "Score Source Externe 3 (information financière externe)",
     "AMT_CREDIT": "Montant du crédit demandé",
@@ -21,7 +20,6 @@ FEATURE_DESCRIPTIONS = {
     "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": "Date de fin maximale des crédits passés (en jours)",
     "DAYS_EMPLOYED": "Ancienneté d'emploi actuelle (en jours, négatif, 365243 si non employé)",
 
-    # Autres variables descriptives
     "CODE_GENDER": "Genre",
     "NAME_EDUCATION_TYPE": "Niveau d'éducation",
     "NAME_FAMILY_STATUS": "Statut familial",
@@ -33,8 +31,6 @@ FEATURE_DESCRIPTIONS = {
     "REGION_POPULATION_RELATIVE": "Densité de population de la région de résidence",
     "HOUR_APPR_PROCESS_START": "Heure de début de la demande",
 
-    # Descriptions pour les variables agrégées/encodées souvent moins intuitives
-    # À compléter si vous souhaitez afficher plus de détails dans le dashboard, sinon elles seront gérées par les SHAP values
     "SK_ID_CURR_AMT_GOODS_PRICE_mean": "Moyenne du prix des biens des anciens crédits",
     "SK_ID_CURR_AMT_PAYMENT_CURRENT_mean": "Moyenne des paiements actuels des crédits",
     "SK_ID_CURR_AMT_INSTALMENT_mean": "Moyenne des montants d'échéances des anciens crédits",
@@ -233,7 +229,6 @@ FEATURE_DESCRIPTIONS = {
     "SK_ID_CURR_AMT_CREDIT_mean": "Moyenne du montant du crédit des anciens crédits",
     "SK_ID_CURR_AMT_DRAWINGS_CURRENT_mean": "Moyenne des retraits actuels",
 
-    # Noms originaux des features pour les mapping des categorical_features
     "NAME_CONTRACT_TYPE": "Type de contrat",
     "CODE_GENDER": "Genre",
     "FLAG_OWN_CAR": "Possède une voiture",
@@ -268,11 +263,8 @@ API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 @st.cache_data
 def load_sample_data():
     try:
-        # Tenter de charger un échantillon des données brutes
         df_sample = pd.read_csv("Projet+Mise+en+prod+-+home-credit-default-risk/application_train.csv")
-        # Sélectionner seulement les colonnes que nous avons et prendre un échantillon
-        # Utiliser les noms techniques pour charger depuis le CSV
-        relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys()) # Utiliser toutes les clés pour s'assurer que les colonnes existent
+        relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
         df_sample_filtered = df_sample[df_sample.columns.intersection(relevant_cols_for_sample)].sample(1000, random_state=42)
 
         if 'TARGET' in df_sample_filtered.columns:
@@ -299,11 +291,9 @@ def load_sample_data():
             "REGION_POPULATION_RELATIVE": np.random.rand(100),
             "HOUR_APPR_PROCESS_START": np.random.randint(0, 24, 100),
         }
-        # Convert Days_Birth and Days_Employed to negative for consistency with your model
         df = pd.DataFrame(data)
         df['DAYS_BIRTH'] = -np.abs(df['DAYS_BIRTH'])
         df['DAYS_EMPLOYED'] = -np.abs(df['DAYS_EMPLOYED'])
-        # A few non-employed for DAYS_EMPLOYED
         df.loc[np.random.choice(df.index, 10, replace=False), 'DAYS_EMPLOYED'] = 365243
         return df
 
@@ -323,11 +313,9 @@ Vous pouvez également comparer le profil du client avec l'ensemble de la base.
 st.sidebar.header("👤 Informations Client Actuel")
 st.sidebar.markdown("Remplissez les champs ci-dessous pour obtenir le score de crédit.")
 
-# Utilisation des 10 features les plus importantes identifiées dans votre notebook
-# et ajout de quelques autres informations descriptives pour l'interface utilisateur.
 with st.sidebar.form("client_data_form"):
     st.markdown("### Champs essentiels pour le calcul du score:")
-    # Utilisez FEATURE_DESCRIPTIONS pour les labels
+
     EXT_SOURCE_1 = st.number_input(FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1", "Score Source Externe 1"), value=0.5, format="%.6f", min_value=0.0, max_value=1.0, help="Score normalisé d'une source de données externe (plus élevé = meilleur).")
     EXT_SOURCE_3 = st.number_input(FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"), value=0.5, format="%.6f", min_value=0.0, max_value=1.0, help="Score normalisé d'une autre source externe.")
     AMT_CREDIT = st.number_input(FEATURE_DESCRIPTIONS.get("AMT_CREDIT", "Montant du crédit demandé"), value=250000.0, min_value=0.0, max_value=5000000.0, help="Montant total du crédit demandé par le client.")
@@ -335,14 +323,14 @@ with st.sidebar.form("client_data_form"):
     # Conversion des jours en années pour l'affichage et l'input
     days_birth_input = st.number_input("Âge du client (en jours, ex: -15000)", value=-15000, min_value=-30000, max_value=-7000, help="Âge du client au moment de la demande, en jours (valeurs négatives : nombre de jours depuis la naissance).")
     st.info(f"Soit environ {round(abs(days_birth_input) / 365.25)} ans.")
-    DAYS_BIRTH = days_birth_input # Envoyé à l'API tel quel
+    DAYS_BIRTH = days_birth_input
 
     EXT_SOURCE_2 = st.number_input(FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2", "Score Source Externe 2"), value=0.5, format="%.6f", min_value=0.0, max_value=1.0, help="Score normalisé d'une troisième source externe.")
     AMT_ANNUITY = st.number_input(FEATURE_DESCRIPTIONS.get("AMT_ANNUITY", "Montant des annuités du prêt"), value=25000.0, min_value=0.0, max_value=200000.0, help="Montant de l'annuité du prêt (versements annuels).")
     SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean = st.number_input(FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean", "Moyenne des échéances futures impayées"), value=0.0, min_value=0.0, max_value=100.0, help="Nombre moyen de versements futurs pour les crédits précédents du client.")
     days_id_publish_input = st.number_input("Ancienneté mise à jour ID (en jours, ex: -1000)", value=-1000, min_value=-10000, max_value=-1, help="Nombre de jours depuis la dernière publication/mise à jour de l'ID client (négatif).")
     st.info(f"Soit environ {round(abs(days_id_publish_input) / 365.25)} ans.")
-    DAYS_ID_PUBLISH = days_id_publish_input # Envoyé à l'API tel quel
+    DAYS_ID_PUBLISH = days_id_publish_input
 
     sk_id_curr_days_credit_enddate_max_input = st.number_input("Date fin max crédits passés (en jours, ex: 0.0)", value=0.0, min_value=-10000.0, max_value=10000.0, help="Nombre maximal de jours entre la date actuelle et la date de fin prévue du crédit le plus récent du client (- = passé, + = futur).")
     if sk_id_curr_days_credit_enddate_max_input < 0:
@@ -351,7 +339,7 @@ with st.sidebar.form("client_data_form"):
         st.info(f"Date de fin du crédit le plus récent : dans environ {round(abs(sk_id_curr_days_credit_enddate_max_input) / 365.25)} ans.")
     else:
         st.info("Date de fin du crédit le plus récent : aujourd'hui.")
-    SK_ID_CURR_DAYS_CREDIT_ENDDATE_max = sk_id_curr_days_credit_enddate_max_input # Envoyé à l'API tel quel
+    SK_ID_CURR_DAYS_CREDIT_ENDDATE_max = sk_id_curr_days_credit_enddate_max_input
 
     days_employed_input = st.number_input("Ancienneté d'emploi (en jours, ex: -2000 ou 365243)", value=-2000, min_value=-20000, max_value=365243, help="Nombre de jours depuis le début de l'emploi actuel (négatif). Utilisez 365243 si le client est non-employé.")
     if days_employed_input == 365243:
@@ -360,7 +348,7 @@ with st.sidebar.form("client_data_form"):
         st.info(f"Ancienneté d'emploi : environ {round(abs(days_employed_input) / 365.25)} ans.")
     else:
         st.info("Valeur d'ancienneté d'emploi non standard (positive).")
-    DAYS_EMPLOYED = days_employed_input # Envoyé à l'API tel quel
+    DAYS_EMPLOYED = days_employed_input
 
 
     st.markdown("### Autres informations descriptives (pour le profil client):")
@@ -385,7 +373,6 @@ with st.sidebar.form("client_data_form"):
 
 # --- Affichage des résultats dans la zone principale ---
 if submitted:
-    # Préparer les données pour l'API (avec les noms techniques originaux)
     client_data_for_api = {
         "EXT_SOURCE_1": EXT_SOURCE_1,
         "EXT_SOURCE_3": EXT_SOURCE_3,
@@ -528,13 +515,11 @@ if submitted:
         with col_comp1:
             selected_feature_hist_tech_name = st.selectbox(
                 "Sélectionnez une caractéristique à comparer (Histogramme):",
-                # Filter df_ref columns to ensure they are in FEATURE_DESCRIPTIONS for clear labels
                 [col for col in df_ref.columns if col in FEATURE_DESCRIPTIONS],
                 format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x)
             )
 
             if selected_feature_hist_tech_name and selected_feature_hist_tech_name in df_ref.columns:
-                # Special handling for DAYS_BIRTH and DAYS_EMPLOYED in comparison plots for clarity (convert to years)
                 df_temp = df_ref.copy()
                 client_value_for_plot = client_data_for_api.get(selected_feature_hist_tech_name)
 
@@ -544,9 +529,8 @@ if submitted:
                     if client_value_for_plot is not None:
                         client_value_for_plot = np.abs(client_value_for_plot) / 365.25
                 elif selected_feature_hist_tech_name == "DAYS_EMPLOYED":
-                    # For plotting, map 365243 to a distinct category like "Non-employé"
                     df_temp["Ancienneté d'emploi (années)"] = np.abs(df_temp["DAYS_EMPLOYED"]) / 365.25
-                    df_temp.loc[df_temp["DAYS_EMPLOYED"] == 365243, "Ancienneté d'emploi (années)"] = "Non-employé" # Set to string for categorical distinction
+                    df_temp.loc[df_temp["DAYS_EMPLOYED"] == 365243, "Ancienneté d'emploi (années)"] = "Non-employé"
                     plot_x_axis = "Ancienneté d'emploi (années)"
                     if client_value_for_plot is not None:
                         if client_value_for_plot == 365243:
@@ -563,17 +547,14 @@ if submitted:
                                         )
 
                 if client_value_for_plot is not None:
-                    # Add vertical line for numerical or highlight for categorical
                     if isinstance(client_value_for_plot, (int, float)):
                         fig_hist.add_vline(x=client_value_for_plot, line_dash="dash", line_color="red",
                                           annotation_text=f"Client: {client_value_for_plot:.2f}",
                                           annotation_position="top right")
                     elif isinstance(client_value_for_plot, str):
-                        # For categorical, it's harder to draw a single line.
-                        # Could add a text annotation or a point if it's a value that appears on the x-axis labels.
                         fig_hist.add_annotation(
                             x=client_value_for_plot,
-                            y=1, # At the top of the y-axis
+                            y=1,
                             text=f"Client",
                             showarrow=True,
                             arrowhead=2,
@@ -609,7 +590,6 @@ if submitted:
                 client_x_val = client_data_for_api.get(feature_x_tech_name)
                 client_y_val = client_data_for_api.get(feature_y_tech_name)
 
-                # Convert DAYS_BIRTH and DAYS_EMPLOYED for scatter plot if selected
                 if feature_x_tech_name == "DAYS_BIRTH":
                     df_temp_scatter["_X_Axis_"] = np.abs(df_temp_scatter["DAYS_BIRTH"]) / 365.25
                     if client_x_val is not None: client_x_val = np.abs(client_x_val) / 365.25
@@ -661,9 +641,7 @@ if submitted:
         st.subheader("🔍 Autres Graphiques Pertinents")
 
         if 'AMT_CREDIT' in df_ref.columns and 'NAME_EDUCATION_TYPE' in df_ref.columns:
-            # For this specific plot, ensure the data types are correct
             df_temp_box = df_ref.copy()
-            # Ensure NAME_EDUCATION_TYPE is treated as categorical if it's not already
             df_temp_box['NAME_EDUCATION_TYPE'] = df_temp_box['NAME_EDUCATION_TYPE'].astype(str)
 
             fig_box = px.box(df_temp_box, x="NAME_EDUCATION_TYPE", y="AMT_CREDIT",
