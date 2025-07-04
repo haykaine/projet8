@@ -234,6 +234,10 @@ FEATURE_DESCRIPTIONS = {
     "EMERGENCYSTATE_MODE": "État d'urgence du bâtiment",
     "REGION_RATING_CLIENT": "Notation de la région (par le client)",
     "REGION_RATING_CLIENT_W_CITY": "Notation de la région (par le client avec ville)",
+
+    # Nouvelles clés pour les colonnes transformées
+    "_AGE_YEARS": "Âge du client (années)",
+    "_EMPLOYED_YEARS": "Ancienneté d'emploi (années)"
 }
 
 # --- Configuration de la page Streamlit ---
@@ -255,6 +259,13 @@ def load_full_data(file_path):
         # Supprimer la colonne TARGET si elle existe pour la prédiction
         if 'TARGET' in df.columns:
             df = df.drop(columns=['TARGET'])
+
+        # --- Pré-traitement pour les graphiques de comparaison ---
+        df["_AGE_YEARS"] = np.abs(df["DAYS_BIRTH"]) / 365.25
+        df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
+        df.loc[df["DAYS_EMPLOYED"] == 365243, "_EMPLOYED_YEARS"] = "Non-employé"
+        df["_EMPLOYED_YEARS"] = df["_EMPLOYED_YEARS"].astype('category')  # Convertir en catégorie
+
         return df
     except FileNotFoundError:
         st.error(
@@ -671,147 +682,135 @@ if submitted:
         st.markdown(
             "Comparez les caractéristiques du client actuel avec la distribution de l'ensemble de notre base de données.")
 
+        # Liste des colonnes disponibles pour la comparaison, incluant les transformées
+        comparison_features = [col for col in df_ref.columns if
+                               col in FEATURE_DESCRIPTIONS or col in ["_AGE_YEARS",
+                                                                      "_EMPLOYED_YEARS"]]
+
         col_comp1, col_comp2 = st.columns(2)
 
         with col_comp1:
             selected_feature_hist_tech_name = st.selectbox(
                 "Sélectionnez une caractéristique à comparer (Histogramme):",
-                [col for col in df_ref.columns if col in FEATURE_DESCRIPTIONS],
+                comparison_features,
                 format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x)
             )
 
-            if selected_feature_hist_tech_name and selected_feature_hist_tech_name in df_ref.columns:
-                df_temp = df_ref.copy()
-                client_value_for_plot = client_data_for_api.get(selected_feature_hist_tech_name)
+            if selected_feature_hist_tech_name:
+                plot_x_axis = selected_feature_hist_tech_name
+                client_value_for_plot_hist = None
 
-                if selected_feature_hist_tech_name == "DAYS_BIRTH":
-                    df_temp["Âge (années)"] = np.abs(df_temp["DAYS_BIRTH"]) / 365.25
-                    plot_x_axis = "Âge (années)"
-                    if client_value_for_plot is not None:
-                        client_value_for_plot = np.abs(client_value_for_plot) / 365.25
-                elif selected_feature_hist_tech_name == "DAYS_EMPLOYED":
-                    df_temp["Ancienneté d'emploi (années)"] = np.abs(
-                        df_temp["DAYS_EMPLOYED"]) / 365.25
-                    df_temp.loc[df_temp[
-                                    "DAYS_EMPLOYED"] == 365243, "Ancienneté d'emploi (années)"] = "Non-employé"
-                    plot_x_axis = "Ancienneté d'emploi (années)"
-                    if client_value_for_plot is not None:
-                        if client_value_for_plot == 365243:
-                            client_value_for_plot = "Non-employé"
-                        else:
-                            client_value_for_plot = np.abs(client_value_for_plot) / 365.25
+                # Obtenir la valeur du client pour l'affichage sur l'histogramme
+                if selected_feature_hist_tech_name == "_AGE_YEARS":
+                    client_value_for_plot_hist = np.abs(
+                        client_data_for_api.get("DAYS_BIRTH")) / 365.25
+                elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS":
+                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
+                        client_value_for_plot_hist = "Non-employé"
+                    else:
+                        client_value_for_plot_hist = np.abs(
+                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
                 else:
-                    plot_x_axis = selected_feature_hist_tech_name
+                    client_value_for_plot_hist = client_data_for_api.get(
+                        selected_feature_hist_tech_name)
 
-                fig_hist = px.histogram(df_temp, x=plot_x_axis,
+                fig_hist = px.histogram(df_ref, x=plot_x_axis,
+                                        # Utilise df_ref directement avec les nouvelles colonnes
                                         title=f"Distribution de '{FEATURE_DESCRIPTIONS.get(selected_feature_hist_tech_name, selected_feature_hist_tech_name)}' dans la base",
                                         marginal="box",
                                         color_discrete_sequence=px.colors.qualitative.Plotly
                                         )
 
-                if client_value_for_plot is not None:
-                    if pd.api.types.is_numeric_dtype(df_temp[plot_x_axis]) and isinstance(
-                            client_value_for_plot, (int, float)):
-                        fig_hist.add_vline(x=client_value_for_plot, line_dash="dash",
+                if client_value_for_plot_hist is not None:
+                    if pd.api.types.is_numeric_dtype(df_ref[plot_x_axis]) and isinstance(
+                            client_value_for_plot_hist, (int, float)):
+                        fig_hist.add_vline(x=client_value_for_plot_hist, line_dash="dash",
                                            line_color="red",
-                                           annotation_text=f"Client: {client_value_for_plot:.2f}",
+                                           annotation_text=f"Client: {client_value_for_plot_hist:.2f}",
                                            annotation_position="top right")
-                    elif isinstance(client_value_for_plot, str):
+                    elif isinstance(client_value_for_plot_hist,
+                                    str) and client_value_for_plot_hist in df_ref[
+                        plot_x_axis].cat.categories:
                         fig_hist.add_annotation(
-                            x=client_value_for_plot,
-                            y=1,
+                            x=client_value_for_plot_hist,
+                            y=1,  # Position en haut du graphique
                             text=f"Client",
                             showarrow=True,
                             arrowhead=2,
                             arrowcolor="red",
                             font=dict(color="red"),
-                            yref="paper",
+                            yref="paper",  # Pour positionner sur l'axe des y du graphique
                             xref="x"
                         )
 
                 fig_hist.update_layout(height=400)
                 st.plotly_chart(fig_hist, use_container_width=True)
             else:
-                st.warning(
-                    "Caractéristique non trouvée pour l'histogramme dans les données de référence.")
+                st.warning("Veuillez sélectionner une caractéristique pour l'histogramme.")
 
         with col_comp2:
             st.markdown("### Analyse Bi-variée :")
             feature_x_tech_name = st.selectbox(
                 "Axe X : Sélectionnez la première caractéristique :",
-                [col for col in df_ref.columns if col in FEATURE_DESCRIPTIONS],
+                comparison_features,
                 format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x),
                 key="feature_x"
             )
             feature_y_tech_name = st.selectbox(
                 "Axe Y : Sélectionnez la seconde caractéristique :",
-                [col for col in df_ref.columns if col in FEATURE_DESCRIPTIONS],
+                comparison_features,
                 format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x),
                 key="feature_y"
             )
 
-            if feature_x_tech_name and feature_y_tech_name and feature_x_tech_name in df_ref.columns and feature_y_tech_name in df_ref.columns:
-                df_temp_scatter = df_ref.copy()
-                client_x_val = client_data_for_api.get(feature_x_tech_name)
-                client_y_val = client_data_for_api.get(feature_y_tech_name)
+            if feature_x_tech_name and feature_y_tech_name:
+                df_temp_scatter = df_ref.copy()  # df_ref contient déjà les colonnes transformées
 
-                if feature_x_tech_name in df_temp_scatter.columns:
-                    if feature_x_tech_name == "DAYS_BIRTH":
-                        df_temp_scatter["_X_Axis_"] = np.abs(df_temp_scatter["DAYS_BIRTH"]) / 365.25
-                        if client_x_val is not None: client_x_val = np.abs(client_x_val) / 365.25
-                    elif feature_x_tech_name == "DAYS_EMPLOYED":
-                        df_temp_scatter["_X_Axis_"] = np.abs(
-                            df_temp_scatter["DAYS_EMPLOYED"]) / 365.25
-                        df_temp_scatter.loc[
-                            df_temp_scatter["DAYS_EMPLOYED"] == 365243, "_X_Axis_"] = "Non-employé"
-                        if client_x_val is not None: client_x_val = "Non-employé" if client_x_val == 365243 else np.abs(
-                            client_x_val) / 365.25
+                # Récupérer les valeurs du client pour le graphique bi-varié
+                client_x_val_plot = None
+                if feature_x_tech_name == "_AGE_YEARS":
+                    client_x_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
+                elif feature_x_tech_name == "_EMPLOYED_YEARS":
+                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
+                        client_x_val_plot = "Non-employé"
                     else:
-                        df_temp_scatter["_X_Axis_"] = df_temp_scatter[feature_x_tech_name]
+                        client_x_val_plot = np.abs(
+                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
                 else:
-                    df_temp_scatter[
-                        "_X_Axis_"] = pd.NA
-                    st.warning(
-                        f"La colonne '{feature_x_tech_name}' n'est pas présente dans les données de référence pour l'axe X.")
+                    client_x_val_plot = client_data_for_api.get(feature_x_tech_name)
 
-                if feature_y_tech_name in df_temp_scatter.columns:
-                    if feature_y_tech_name == "DAYS_BIRTH":
-                        df_temp_scatter["_Y_Axis_"] = np.abs(df_temp_scatter["DAYS_BIRTH"]) / 365.25
-                        if client_y_val is not None: client_y_val = np.abs(client_y_val) / 365.25
-                    elif feature_y_tech_name == "DAYS_EMPLOYED":
-                        df_temp_scatter["_Y_Axis_"] = np.abs(
-                            df_temp_scatter["DAYS_EMPLOYED"]) / 365.25
-                        df_temp_scatter.loc[
-                            df_temp_scatter["DAYS_EMPLOYED"] == 365243, "_Y_Axis_"] = "Non-employé"
-                        if client_y_val is not None: client_y_val = "Non-employé" if client_y_val == 365243 else np.abs(
-                            client_y_val) / 365.25
+                client_y_val_plot = None
+                if feature_y_tech_name == "_AGE_YEARS":
+                    client_y_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
+                elif feature_y_tech_name == "_EMPLOYED_YEARS":
+                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
+                        client_y_val_plot = "Non-employé"
                     else:
-                        df_temp_scatter["_Y_Axis_"] = df_temp_scatter[feature_y_tech_name]
+                        client_y_val_plot = np.abs(
+                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
                 else:
-                    df_temp_scatter[
-                        "_Y_Axis_"] = pd.NA
-                    st.warning(
-                        f"La colonne '{feature_y_tech_name}' n'est pas présente dans les données de référence pour l'axe Y.")
+                    client_y_val_plot = client_data_for_api.get(feature_y_tech_name)
 
-                # Proceed only if both columns were found and assigned for plotting
-                if "_X_Axis_" in df_temp_scatter.columns and "_Y_Axis_" in df_temp_scatter.columns:
+                # Vérifier si les colonnes existent et sont valides pour le tracé
+                if feature_x_tech_name in df_temp_scatter.columns and feature_y_tech_name in df_temp_scatter.columns:
                     fig_scatter = px.scatter(
-                        df_temp_scatter.dropna(subset=["_X_Axis_", "_Y_Axis_"]),
-                        x="_X_Axis_",
-                        y="_Y_Axis_",
+                        df_temp_scatter.dropna(subset=[feature_x_tech_name, feature_y_tech_name]),
+                        # Utilise les colonnes directement
+                        x=feature_x_tech_name,
+                        y=feature_y_tech_name,
                         title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name)}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name)}'",
                         opacity=0.6,
                         hover_data={feature_x_tech_name: True, feature_y_tech_name: True},
                         color_discrete_sequence=px.colors.qualitative.Plotly
                     )
-                    if client_x_val is not None and client_y_val is not None:
+                    if client_x_val_plot is not None and client_y_val_plot is not None:
                         fig_scatter.add_trace(go.Scatter(
-                            x=[client_x_val],
-                            y=[client_y_val],
+                            x=[client_x_val_plot],
+                            y=[client_y_val_plot],
                             mode='markers',
                             marker=dict(color='red', size=12, symbol='star'),
                             name='Client Actuel',
-                            hovertemplate=f"Client X: {client_x_val}<br>Client Y: {client_y_val}"
+                            hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"
                         ))
                     fig_scatter.update_layout(height=400,
                                               xaxis_title=FEATURE_DESCRIPTIONS.get(
@@ -821,10 +820,10 @@ if submitted:
                     st.plotly_chart(fig_scatter, use_container_width=True)
                 else:
                     st.warning(
-                        "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées.")
+                        "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées ou n'existent pas dans les données de référence.")
             else:
                 st.warning(
-                    "Caractéristiques non trouvées pour l'analyse bi-variée dans les données de référence.")
+                    "Veuillez sélectionner deux caractéristiques pour l'analyse bi-variée.")
 
         st.markdown("---")
         st.subheader("🔍 Autres Graphiques Pertinents")
@@ -838,8 +837,8 @@ if submitted:
                              title="Montant du crédit par niveau d'éducation",
                              labels={"NAME_EDUCATION_TYPE": FEATURE_DESCRIPTIONS.get(
                                  "NAME_EDUCATION_TYPE", "Niveau d'éducation"),
-                                     "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT",
-                                                                            "Montant du crédit")},
+                                 "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT",
+                                                                        "Montant du crédit")},
                              color="NAME_EDUCATION_TYPE",
                              color_discrete_map={
                                  "Higher education": "blue",
