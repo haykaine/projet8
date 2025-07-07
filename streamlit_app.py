@@ -252,16 +252,12 @@ def load_full_data(file_path):
         df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
 
         # Créez _EMPLOYED_YEARS_CAT avec des chaînes de caractères dès le début
-        # Cela évite le mélange initial float64 + str qui génère le FutureWarning
+        # cela évite le mélange initial float64 + str qui génère le FutureWarning
         df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].apply(
-            lambda x: f"{round(x)} ans" if pd.notna(x) else np.nan).astype(str)
+            lambda x: f"{round(x)} ans" if pd.notna(x) else "Inconnu").astype(str)
         df.loc[df["DAYS_EMPLOYED"] == 365243, '_EMPLOYED_YEARS_CAT'] = "Non-employé"
         df['_EMPLOYED_YEARS_CAT'] = df['_EMPLOYED_YEARS_CAT'].astype('category')
 
-        st.write("DEBUG: df_full head after load_full_data")
-        st.write(df.head())
-        st.write("DEBUG: df_full dtypes after load_full_data")
-        st.write(df.dtypes)
         return df
     except FileNotFoundError:
         st.error(f"Fichier '{file_path}' non trouvé.")
@@ -275,19 +271,14 @@ df_ref = df_full[df_full.columns.intersection(relevant_cols_for_sample)].sample(
     min(1000, len(df_full)), random_state=42)
 
 st.title("📊 Prêt à dépenser : Outil de Scoring Crédit pour les Chargés de Clientèle")
-st.markdown("""
-Bienvenue sur le dashboard interactif d'aide à la décision d'octroi de crédit.
-Cet outil vous permet de visualiser le score de crédit d'un client,
-sa probabilité de défaut, et les facteurs qui ont influencé cette décision.
-Vous pouvez également comparer le profil du client avec l'ensemble de la base.
-""")
+st.markdown(
+    "Bienvenue sur le dashboard interactif d'aide à la décision d'octroi de crédit. Cet outil vous permet de visualiser le score de crédit d'un client, sa probabilité de défaut, et les facteurs qui ont influencé cette décision. Vous pouvez également comparer le profil du client avec l'ensemble de la base.")
 
 st.sidebar.header("👤 Informations Client Actuel")
 st.sidebar.markdown(
     "Saisissez un ID client pour pré-remplir les champs, ou entrez les informations manuellement.")
 
-client_id_input = st.sidebar.number_input("ID Client (Ex: 100002)", min_value=0, value=0, step=1,
-                                          help="Saisissez l'ID d'un client existant pour charger ses données.")
+client_id_input = st.sidebar.number_input("ID Client (Ex: 100002)", min_value=0, value=0, step=1)
 load_client_data_button = st.sidebar.button("Charger données client par ID")
 
 if 'client_data_form_values' not in st.session_state:
@@ -310,43 +301,37 @@ if load_client_data_button and client_id_input != 0:
         client_data = client_row.iloc[0].to_dict()
 
         for feature, value in client_data.items():
-            if feature in st.session_state.client_data_form_values:
-                st.write(
-                    f"DEBUG: Traitement de la feature {feature} avec la valeur {value} (type: {type(value)})")
-                if pd.isna(value):
-                    if pd.api.types.is_numeric_dtype(df_full[feature]):
-                        st.session_state.client_data_form_values[feature] = 0.0
-                    else:
-                        st.session_state.client_data_form_values[feature] = "XNA" if feature in [
-                            "CODE_GENDER", "OCCUPATION_TYPE"] else "Unknown"
+            # Vérification et aplatissement des valeurs
+            final_value = None
+            if isinstance(value, (pd.Series, pd.Index)):
+                st.write(f"DEBUG: Found non-scalar {type(value)} for feature {feature}: {value}")
+                if not value.empty and len(value) == 1:
+                    final_value = value.iloc[0] if isinstance(value, pd.Series) else value[0]
+                    st.write(f"DEBUG: Flattened to scalar: {final_value}")
                 else:
-                    if isinstance(value, (pd.Series, pd.Index)):
-                        st.write(
-                            f"ERROR: Found non-scalar value for {feature}: {value} (type: {type(value)})")
-                        # Tentative de récupérer le premier élément si c'est un Series/Index avec un seul élément
-                        if len(value) == 1:
-                            st.session_state.client_data_form_values[feature] = value.iloc[
-                                0] if isinstance(value, pd.Series) else value[0]
-                        else:
-                            # Fallback to default or raise an error if multiple values are found
-                            st.session_state.client_data_form_values[
-                                feature] = 0.0 if pd.api.types.is_numeric_dtype(
-                                df_full[feature]) else "Unknown"
+                    st.write(
+                        f"ERROR: Non-scalar {type(value)} for {feature} is empty or has multiple values. Skipping or defaulting.")
+                    # Fallback to default or raise a specific error
+                    if feature in st.session_state.client_data_form_values:
+                        final_value = st.session_state.client_data_form_values[
+                            feature]  # Use current default
                     else:
-                        st.session_state.client_data_form_values[feature] = value
-            elif feature not in st.session_state.client_data_form_values and feature != 'SK_ID_CURR':
-                st.write(
-                    f"DEBUG: Ajout de la feature {feature} (non présente initialement) avec la valeur {value} (type: {type(value)})")
-                if isinstance(value, (pd.Series, pd.Index)):
-                    if len(value) == 1:
-                        st.session_state.client_data_form_values[feature] = value.iloc[
-                            0] if isinstance(value, pd.Series) else value[0]
-                    else:
-                        st.session_state.client_data_form_values[
-                            feature] = 0.0 if pd.api.types.is_numeric_dtype(
-                            df_full[feature]) else "Unknown"
+                        final_value = 0.0 if pd.api.types.is_numeric_dtype(
+                            df_full[feature]) else "Unknown"  # Generic default
+            elif pd.isna(value):
+                if pd.api.types.is_numeric_dtype(df_full[feature]):
+                    final_value = 0.0  # Or np.nan if you prefer
                 else:
-                    st.session_state.client_data_form_values[feature] = value
+                    final_value = "XNA" if feature in ["CODE_GENDER",
+                                                       "OCCUPATION_TYPE"] else "Unknown"
+            else:
+                final_value = value
+
+            if final_value is not None:
+                st.session_state.client_data_form_values[feature] = final_value
+            st.write(
+                f"DEBUG: {feature} stored in session_state: {st.session_state.client_data_form_values.get(feature)} (type: {type(st.session_state.client_data_form_values.get(feature))})")
+
     else:
         st.sidebar.warning(f"ID Client {client_id_input} non trouvé.")
         st.session_state.client_data_form_values = {
@@ -365,16 +350,19 @@ with st.sidebar.form("client_data_form"):
     st.markdown("### Champs essentiels pour le calcul du score:")
 
     EXT_SOURCE_1 = st.number_input(
-        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1", "Score Source Externe 1"),
-        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1")), format="%.6f",
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1", 0.5)),
+        format="%.6f",
         min_value=0.0, max_value=1.0)
     EXT_SOURCE_3 = st.number_input(
-        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"),
-        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3")), format="%.6f",
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3", 0.5)),
+        format="%.6f",
         min_value=0.0, max_value=1.0)
     AMT_CREDIT = st.number_input(
-        FEATURE_DESCRIPTIONS.get("AMT_CREDIT", "Montant du crédit demandé"),
-        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT")), min_value=0.0,
+        FEATURE_DESCRIPTIONS.get("AMT_CREDIT"),
+        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT", 250000.0)),
+        min_value=0.0,
         max_value=5000000.0)
 
     days_birth_val = st.session_state.client_data_form_values.get("DAYS_BIRTH")
@@ -385,18 +373,20 @@ with st.sidebar.form("client_data_form"):
     DAYS_BIRTH = days_birth_input
 
     EXT_SOURCE_2 = st.number_input(
-        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2", "Score Source Externe 2"),
-        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_2")), format="%.6f",
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_2", 0.5)),
+        format="%.6f",
         min_value=0.0, max_value=1.0)
     AMT_ANNUITY = st.number_input(
-        FEATURE_DESCRIPTIONS.get("AMT_ANNUITY", "Montant des annuités du prêt"),
-        value=float(st.session_state.client_data_form_values.get("AMT_ANNUITY")), min_value=0.0,
+        FEATURE_DESCRIPTIONS.get("AMT_ANNUITY"),
+        value=float(st.session_state.client_data_form_values.get("AMT_ANNUITY", 25000.0)),
+        min_value=0.0,
         max_value=200000.0)
     SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean = st.number_input(
-        FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean",
-                                 "Moyenne des échéances futures impayées"),
+        FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean"),
         value=float(
-            st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean")),
+            st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean",
+                                                         0.0)),
         min_value=0.0, max_value=100.0)
 
     days_id_publish_val = st.session_state.client_data_form_values.get("DAYS_ID_PUBLISH")
@@ -437,57 +427,62 @@ with st.sidebar.form("client_data_form"):
     DAYS_EMPLOYED = days_employed_input
 
     st.markdown("### Autres informations descriptives (pour le profil client):")
-    CODE_GENDER = st.selectbox(FEATURE_DESCRIPTIONS.get("CODE_GENDER", "Genre"), ["M", "F", "XNA"],
-                               index=["M", "F", "XNA"].index(
+    CODE_GENDER_options = ["M", "F", "XNA"]
+    CODE_GENDER = st.selectbox(FEATURE_DESCRIPTIONS.get("CODE_GENDER"), CODE_GENDER_options,
+                               index=CODE_GENDER_options.index(
                                    st.session_state.client_data_form_values.get("CODE_GENDER",
                                                                                 "M")))
+    NAME_EDUCATION_TYPE_options = ["Secondary / secondary special", "Higher education",
+                                   "Incomplete higher",
+                                   "Lower secondary", "Academic degree"]
     NAME_EDUCATION_TYPE = st.selectbox(
-        FEATURE_DESCRIPTIONS.get("NAME_EDUCATION_TYPE", "Niveau d'éducation"),
-        ["Secondary / secondary special", "Higher education", "Incomplete higher",
-         "Lower secondary", "Academic degree"],
-        index=["Secondary / secondary special", "Higher education", "Incomplete higher",
-               "Lower secondary", "Academic degree"].index(
+        FEATURE_DESCRIPTIONS.get("NAME_EDUCATION_TYPE"), NAME_EDUCATION_TYPE_options,
+        index=NAME_EDUCATION_TYPE_options.index(
             st.session_state.client_data_form_values.get("NAME_EDUCATION_TYPE",
                                                          "Secondary / secondary special")))
+    NAME_FAMILY_STATUS_options = ["Married", "Single / not married", "Civil marriage", "Separated",
+                                  "Widow"]
     NAME_FAMILY_STATUS = st.selectbox(
-        FEATURE_DESCRIPTIONS.get("NAME_FAMILY_STATUS", "Statut familial"),
-        ["Married", "Single / not married", "Civil marriage", "Separated", "Widow"],
-        index=["Married", "Single / not married", "Civil marriage", "Separated", "Widow"].index(
+        FEATURE_DESCRIPTIONS.get("NAME_FAMILY_STATUS"), NAME_FAMILY_STATUS_options,
+        index=NAME_FAMILY_STATUS_options.index(
             st.session_state.client_data_form_values.get("NAME_FAMILY_STATUS", "Married")))
     AMT_INCOME_TOTAL = st.number_input(
-        FEATURE_DESCRIPTIONS.get("AMT_INCOME_TOTAL", "Revenu annuel total"),
-        value=float(st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL")),
+        FEATURE_DESCRIPTIONS.get("AMT_INCOME_TOTAL"),
+        value=float(st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL", 150000.0)),
         min_value=0.0,
         max_value=5000000.0)
-    CNT_CHILDREN = st.number_input(FEATURE_DESCRIPTIONS.get("CNT_CHILDREN", "Nombre d'enfants"),
-                                   value=int(st.session_state.client_data_form_values.get(
-                                       "CNT_CHILDREN")), min_value=0, max_value=20, step=1)
-    FLAG_OWN_CAR = st.radio(FEATURE_DESCRIPTIONS.get("FLAG_OWN_CAR", "Possède une voiture"),
-                            ["Y", "N"], index=["Y", "N"].index(
-            st.session_state.client_data_form_values.get("FLAG_OWN_CAR", "N")), horizontal=True)
+    CNT_CHILDREN = st.number_input(FEATURE_DESCRIPTIONS.get("CNT_CHILDREN"),
+                                   value=int(
+                                       st.session_state.client_data_form_values.get("CNT_CHILDREN",
+                                                                                    0)),
+                                   min_value=0, max_value=20, step=1)
+    FLAG_OWN_CAR = st.radio(FEATURE_DESCRIPTIONS.get("FLAG_OWN_CAR"), ["Y", "N"],
+                            index=["Y", "N"].index(
+                                st.session_state.client_data_form_values.get("FLAG_OWN_CAR", "N")),
+                            horizontal=True)
     FLAG_OWN_REALTY = st.radio(
-        FEATURE_DESCRIPTIONS.get("FLAG_OWN_REALTY", "Possède un bien immobilier"), ["Y", "N"],
+        FEATURE_DESCRIPTIONS.get("FLAG_OWN_REALTY"), ["Y", "N"],
         index=["Y", "N"].index(
             st.session_state.client_data_form_values.get("FLAG_OWN_REALTY", "Y")), horizontal=True)
-    OCCUPATION_TYPE = st.selectbox(FEATURE_DESCRIPTIONS.get("OCCUPATION_TYPE", "Type d'emploi"), [
+    OCCUPATION_TYPE_options = [
         "Laborers", "Core staff", "Accountants", "Managers", "Drivers", "Sales staff",
         "Cleaning staff", "Cooking staff", "Private service staff", "Medicine staff",
         "Security staff", "High skill tech staff", "Waiters/barmen staff", "Low-skill Laborers",
         "Realty agents", "Secretaries", "IT staff", "HR staff", "nan"
-    ], index=[
-        "Laborers", "Core staff", "Accountants", "Managers", "Drivers", "Sales staff",
-        "Cleaning staff", "Cooking staff", "Private service staff", "Medicine staff",
-        "Security staff", "High skill tech staff", "Waiters/barmen staff", "Low-skill Laborers",
-        "Realty agents", "Secretaries", "IT staff", "HR staff", "nan"
-    ].index(st.session_state.client_data_form_values.get("OCCUPATION_TYPE", "Laborers")))
+    ]
+    OCCUPATION_TYPE = st.selectbox(FEATURE_DESCRIPTIONS.get("OCCUPATION_TYPE"),
+                                   OCCUPATION_TYPE_options,
+                                   index=OCCUPATION_TYPE_options.index(
+                                       st.session_state.client_data_form_values.get(
+                                           "OCCUPATION_TYPE", "Laborers")))
     REGION_POPULATION_RELATIVE = st.number_input(
-        FEATURE_DESCRIPTIONS.get("REGION_POPULATION_RELATIVE",
-                                 "Densité de population de la région"),
-        value=float(st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE")),
+        FEATURE_DESCRIPTIONS.get("REGION_POPULATION_RELATIVE"),
+        value=float(
+            st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE", 0.018801)),
         format="%.6f", min_value=0.0, max_value=1.0)
     HOUR_APPR_PROCESS_START = st.number_input(
-        FEATURE_DESCRIPTIONS.get("HOUR_APPR_PROCESS_START", "Heure de début de la demande"),
-        value=int(st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START")),
+        FEATURE_DESCRIPTIONS.get("HOUR_APPR_PROCESS_START"),
+        value=int(st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START", 12)),
         min_value=0,
         max_value=23, step=1)
 
@@ -654,6 +649,7 @@ if submitted:
                         client_value_for_plot_hist = "Non-employé"
                     else:
                         client_value_for_plot_hist = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                    # Assurez-vous que la catégorie du client existe dans les catégories du df_ref pour _EMPLOYED_YEARS_CAT
                     if client_value_for_plot_hist not in df_ref[
                         '_EMPLOYED_YEARS_CAT'].cat.categories:
                         df_ref['_EMPLOYED_YEARS_CAT'] = df_ref[
@@ -728,7 +724,7 @@ if submitted:
                     if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
                         client_y_val_plot = "Non-employé"
                     else:
-                        client_y_val_plot = f"{round(np.abs(client_data_for_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                        client_y_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
                     if client_y_val_plot not in df_temp_scatter[
                         '_EMPLOYED_YEARS_CAT'].cat.categories:
                         df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
@@ -782,9 +778,8 @@ if submitted:
             fig_box = px.box(df_temp_box, x="NAME_EDUCATION_TYPE", y="AMT_CREDIT",
                              title="Montant du crédit par niveau d'éducation",
                              labels={"NAME_EDUCATION_TYPE": FEATURE_DESCRIPTIONS.get(
-                                 "NAME_EDUCATION_TYPE", "Niveau d'éducation"),
-                                     "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT",
-                                                                            "Montant du crédit")},
+                                 "NAME_EDUCATION_TYPE"),
+                                     "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT")},
                              color="NAME_EDUCATION_TYPE",
                              color_discrete_map={"Higher education": "blue",
                                                  "Secondary / secondary special": "green",
