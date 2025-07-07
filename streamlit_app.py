@@ -301,39 +301,44 @@ if load_client_data_button and client_id_input != 0:
         client_data = client_row.iloc[0].to_dict()
 
         for feature, value in client_data.items():
-            # Vérification et aplatissement des valeurs
+            # Initialiser final_value à None. Il sera mis à jour si une valeur scalaire valide est trouvée.
             final_value = None
+
+            # Vérifier si la valeur est une série Pandas (Index est aussi une sorte de série)
             if isinstance(value, (pd.Series, pd.Index)):
-                st.write(f"DEBUG: Found non-scalar {type(value)} for feature {feature}: {value}")
+                # Si c'est une série d'un seul élément, extraire l'élément scalaire
                 if not value.empty and len(value) == 1:
                     final_value = value.iloc[0] if isinstance(value, pd.Series) else value[0]
-                    st.write(f"DEBUG: Flattened to scalar: {final_value}")
                 else:
-                    st.write(
-                        f"ERROR: Non-scalar {type(value)} for {feature} is empty or has multiple values. Skipping or defaulting.")
-                    # Fallback to default or raise a specific error
-                    if feature in st.session_state.client_data_form_values:
-                        final_value = st.session_state.client_data_form_values[
-                            feature]  # Use current default
-                    else:
-                        final_value = 0.0 if pd.api.types.is_numeric_dtype(
-                            df_full[feature]) else "Unknown"  # Generic default
+                    st.warning(f"La caractéristique '{feature}' contient une série non scalaire (vide ou multi-valeurs). Une valeur par défaut sera utilisée si possible.")
+                    if feature in df_full.columns:
+                        if pd.api.types.is_numeric_dtype(df_full[feature]):
+                            final_value = 0.0
+                        elif pd.api.types.is_string_dtype(df_full[feature]) or pd.api.types.is_categorical_dtype(df_full[feature]):
+                            final_value = "Non spécifié"
+                        else:
+                            final_value = None
+            # Gérer les NaN pour les types numériques et non-numériques
             elif pd.isna(value):
-                if pd.api.types.is_numeric_dtype(df_full[feature]):
-                    final_value = 0.0  # Or np.nan if you prefer
-                else:
-                    final_value = "XNA" if feature in ["CODE_GENDER",
-                                                       "OCCUPATION_TYPE"] else "Unknown"
+                if feature in df_full.columns:
+                    if pd.api.types.is_numeric_dtype(df_full[feature]):
+                        final_value = 0.0
+                    elif pd.api.types.is_string_dtype(df_full[feature]) or pd.api.types.is_categorical_dtype(df_full[feature]):
+                        final_value = "Non spécifié"
+                    else:
+                        final_value = None
+                else: # Feature not in original df_full, fallback to a generic default
+                    final_value = 0.0 if isinstance(value, (int, float)) else "Unknown" # Generic default if type cannot be inferred from df_full
             else:
+                # La valeur est déjà un scalaire, l'assigner directement
                 final_value = value
 
             if final_value is not None:
                 st.session_state.client_data_form_values[feature] = final_value
-            st.write(
-                f"DEBUG: {feature} stored in session_state: {st.session_state.client_data_form_values.get(feature)} (type: {type(st.session_state.client_data_form_values.get(feature))})")
-
+                st.write(f"DEBUG: {feature} stored in session_state: {st.session_state.client_data_form_values.get(feature)} (type: {type(st.session_state.client_data_form_values.get(feature))})")
     else:
         st.sidebar.warning(f"ID Client {client_id_input} non trouvé.")
+        # Réinitialiser aux valeurs par défaut si l'ID n'est pas trouvé
         st.session_state.client_data_form_values = {
             "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
             "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
