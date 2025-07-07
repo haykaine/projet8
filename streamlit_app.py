@@ -380,16 +380,15 @@ with st.sidebar.form("client_data_form"):
     # Numeric inputs with session state for initial values
     EXT_SOURCE_1 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1", "Score Source Externe 1"),
-        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1")), format="%.6f",
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1")),
+        format="%.6f",
         min_value=0.0, max_value=1.0,
         help="Score normalisé d'une source de données externe (plus élevé = meilleur).")
-    EXT_SOURCE_3 = st.number_input(
-        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"),
-        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3")), format="%.6f",
-        min_value=0.0, max_value=1.0, help="Score normalisé d'une autre source externe.")
+
     AMT_CREDIT = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_CREDIT", "Montant du crédit demandé"),
-        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT")), min_value=0.0,
+        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT")),
+        min_value=0.0,
         max_value=5000000.0, help="Montant total du crédit demandé par le client.")
 
     days_birth_val = st.session_state.client_data_form_values.get("DAYS_BIRTH")
@@ -397,6 +396,11 @@ with st.sidebar.form("client_data_form"):
         days_birth_val) if days_birth_val is not None else -15000, min_value=-30000,
                                        max_value=-7000,
                                        help="Âge du client au moment de la demande, en jours (valeurs négatives : nombre de jours depuis la naissance).")
+    EXT_SOURCE_3 = st.number_input(
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3")), format="%.6f",
+        min_value=0.0, max_value=1.0, help="Score normalisé d'une autre source externe.")
+
     st.info(f"Soit environ {round(abs(days_birth_input) / 365.25)} ans.")
     DAYS_BIRTH = days_birth_input
 
