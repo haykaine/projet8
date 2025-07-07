@@ -610,8 +610,7 @@ if submitted:
         client_info_df = pd.DataFrame.from_dict(client_data_for_api, orient='index',
                                                 columns=['Valeur'])
         client_info_df.index.name = 'Caractéristique'
-        client_info_df.index = client_info_df.index.map(FEATURE_DESCRIPTIONS).fillna(
-            client_info_df.index)
+        client_info_df.index = client_info_df.index.map(lambda x: FEATURE_DESCRIPTIONS.get(x, x))
 
         display_df = client_info_df.copy()
         for idx, row in display_df.iterrows():
