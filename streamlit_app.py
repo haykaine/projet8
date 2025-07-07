@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import shap
+import traceback
 
 FEATURE_DESCRIPTIONS = {
     "EXT_SOURCE_1": "Score Source Externe 1 (information financière externe)",
@@ -232,12 +233,6 @@ FEATURE_DESCRIPTIONS = {
     "_EMPLOYED_YEARS": "Ancienneté d'emploi (années)"
 }
 
-st.set_page_config(
-    page_title="Prêt à dépenser : Outil de Scoring Crédit",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
 API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 
 
@@ -252,7 +247,6 @@ def load_full_data(file_path):
         df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
 
         # Créez _EMPLOYED_YEARS_CAT avec des chaînes de caractères dès le début
-        # cela évite le mélange initial float64 + str qui génère le FutureWarning
         df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].apply(
             lambda x: f"{round(x)} ans" if pd.notna(x) else "Inconnu").astype(str)
         df.loc[df["DAYS_EMPLOYED"] == 365243, '_EMPLOYED_YEARS_CAT'] = "Non-employé"
@@ -270,6 +264,12 @@ relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys()) + ['_EMPLOYED_YEARS
 df_ref = df_full[df_full.columns.intersection(relevant_cols_for_sample)].sample(
     min(1000, len(df_full)), random_state=42)
 
+st.set_page_config(
+    page_title="Prêt à dépenser : Outil de Scoring Crédit",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 st.title("📊 Prêt à dépenser : Outil de Scoring Crédit pour les Chargés de Clientèle")
 st.markdown(
     "Bienvenue sur le dashboard interactif d'aide à la décision d'octroi de crédit. Cet outil vous permet de visualiser le score de crédit d'un client, sa probabilité de défaut, et les facteurs qui ont influencé cette décision. Vous pouvez également comparer le profil du client avec l'ensemble de la base.")
@@ -281,6 +281,7 @@ st.sidebar.markdown(
 client_id_input = st.sidebar.number_input("ID Client (Ex: 100002)", min_value=0, value=0, step=1)
 load_client_data_button = st.sidebar.button("Charger données client par ID")
 
+# Initialisation de l'état de session pour les valeurs du formulaire
 if 'client_data_form_values' not in st.session_state:
     st.session_state.client_data_form_values = {
         "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
@@ -294,6 +295,14 @@ if 'client_data_form_values' not in st.session_state:
         "HOUR_APPR_PROCESS_START": 12,
     }
 
+# Initialisation de l'état de session pour stocker les résultats et l'état de soumission
+if 'prediction_made' not in st.session_state:
+    st.session_state.prediction_made = False
+if 'prediction_results' not in st.session_state:
+    st.session_state.prediction_results = {}
+if 'client_data_for_api_display' not in st.session_state: # Pour stocker les données du client telles qu'envoyées à l'API
+    st.session_state.client_data_for_api_display = {}
+
 if load_client_data_button and client_id_input != 0:
     client_row = df_full[df_full['SK_ID_CURR'] == client_id_input]
     if not client_row.empty:
@@ -301,12 +310,8 @@ if load_client_data_button and client_id_input != 0:
         client_data = client_row.iloc[0].to_dict()
 
         for feature, value in client_data.items():
-            # Initialiser final_value à None. Il sera mis à jour si une valeur scalaire valide est trouvée.
             final_value = None
-
-            # Vérifier si la valeur est une série Pandas (Index est aussi une sorte de série)
             if isinstance(value, (pd.Series, pd.Index)):
-                # Si c'est une série d'un seul élément, extraire l'élément scalaire
                 if not value.empty and len(value) == 1:
                     final_value = value.iloc[0] if isinstance(value, pd.Series) else value[0]
                 else:
@@ -318,27 +323,26 @@ if load_client_data_button and client_id_input != 0:
                             final_value = "Non spécifié"
                         else:
                             final_value = None
-            # Gérer les NaN pour les types numériques et non-numériques
+                    else:
+                        final_value = 0.0 if isinstance(value, (int, float)) else "Unknown"
             elif pd.isna(value):
                 if feature in df_full.columns:
                     if pd.api.types.is_numeric_dtype(df_full[feature]):
                         final_value = 0.0
                     elif pd.api.types.is_string_dtype(df_full[feature]) or pd.api.types.is_categorical_dtype(df_full[feature]):
-                        final_value = "Non spécifié"
+                        final_value = "XNA" if feature in ["CODE_GENDER", "OCCUPATION_TYPE"] else "Unknown"
                     else:
                         final_value = None
-                else: # Feature not in original df_full, fallback to a generic default
-                    final_value = 0.0 if isinstance(value, (int, float)) else "Unknown" # Generic default if type cannot be inferred from df_full
+                else:
+                    final_value = 0.0 if isinstance(value, (int, float)) else "Unknown"
             else:
-                # La valeur est déjà un scalaire, l'assigner directement
                 final_value = value
 
             if final_value is not None:
                 st.session_state.client_data_form_values[feature] = final_value
-                st.write(f"DEBUG: {feature} stored in session_state: {st.session_state.client_data_form_values.get(feature)} (type: {type(st.session_state.client_data_form_values.get(feature))})")
+
     else:
         st.sidebar.warning(f"ID Client {client_id_input} non trouvé.")
-        # Réinitialiser aux valeurs par défaut si l'ID n'est pas trouvé
         st.session_state.client_data_form_values = {
             "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
             "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
@@ -493,18 +497,7 @@ with st.sidebar.form("client_data_form"):
 
     submitted = st.form_submit_button("Calculer et Expliquer le Score")
 
-import streamlit as st
-import requests
-import json
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-import shap
-import traceback # Importer le module traceback
-
-# ... (le reste de votre code) ...
-
+# Si le formulaire est soumis, effectuez le calcul et stockez les résultats
 if submitted:
     client_data_for_api = {
         "EXT_SOURCE_1": EXT_SOURCE_1, "EXT_SOURCE_3": EXT_SOURCE_3, "AMT_CREDIT": AMT_CREDIT,
@@ -535,311 +528,316 @@ if submitted:
         response.raise_for_status()
         result = response.json()
 
-        prob_default = result.get("probability_default")
-        pred_class = result.get("prediction_class")
-        optimal_threshold_used = result.get("optimal_threshold_used")
-        shap_values_raw = result.get("shap_values")
-        shap_expected_value = result.get("shap_expected_value")
-
+        st.session_state.prediction_results = {
+            "prob_default": result.get("probability_default"),
+            "pred_class": result.get("prediction_class"),
+            "optimal_threshold_used": result.get("optimal_threshold_used"),
+            "shap_values_raw": result.get("shap_values"),
+            "shap_expected_value": result.get("shap_expected_value")
+        }
+        st.session_state.client_data_for_api_display = client_data_for_api
+        st.session_state.prediction_made = True
         st.success("Calcul terminé!")
-
-        st.subheader("📈 Score de Crédit et Décision")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.metric(label="Probabilité de Défaut", value=f"{prob_default:.2%}")
-            if prob_default is not None:
-                fig_gauge = go.Figure(go.Indicator(
-                    mode="gauge+number+delta", value=prob_default * 100,
-                    domain={'x': [0, 1], 'y': [0, 1]},
-                    title={'text': "Probabilité de défaut du client"},
-                    gauge={'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                           'bar': {'color': "darkblue"},
-                           'steps': [
-                               {'range': [0, optimal_threshold_used * 100], 'color': "lightgreen"},
-                               {'range': [optimal_threshold_used * 100, 100],
-                                'color': "lightcoral"}],
-                           'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75,
-                                         'value': optimal_threshold_used * 100}}))
-                fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
-                st.plotly_chart(fig_gauge, use_container_width=True,
-                                config={'displayModeBar': False})
-
-                st.info(f"Le seuil de décision est de **{optimal_threshold_used:.2%}**.")
-                if pred_class == 0:
-                    st.success(
-                        f"**Décision : CRÉDIT ACCORDÉ** (Probabilité de défaut : {prob_default:.2%}, inférieure au seuil)")
-                else:
-                    st.error(
-                        f"**Décision : CRÉDIT REFUSÉ** (Probabilité de défaut : {prob_default:.2%}, supérieure ou égale au seuil)")
-
-        with col2:
-            st.subheader("Interprétation du Score (Facteurs influents)")
-            if shap_values_raw and "error" not in shap_values_raw and shap_values_raw != {
-                "info": "SHAP explainer non disponible ou non initialisé."}:
-                shap_df = pd.DataFrame(shap_values_raw.items(), columns=['feature', 'shap_value'])
-                shap_df['abs_shap_value'] = np.abs(shap_df['shap_value'])
-                shap_df = shap_df.sort_values(by='abs_shap_value', ascending=False).head(10)
-                shap_df['feature_display_name'] = shap_df['feature'].map(
-                    FEATURE_DESCRIPTIONS).fillna(shap_df['feature'])
-
-                fig_shap = px.bar(
-                    shap_df, x='shap_value', y='feature_display_name', orientation='h',
-                    title='Top 10 des facteurs influençant la décision pour ce client',
-                    labels={'shap_value': 'Impact sur la probabilité de défaut (valeur SHAP)',
-                            'feature_display_name': 'Caractéristique'},
-                    color='shap_value', color_continuous_scale=px.colors.diverging.RdBu,
-                    hover_data={'shap_value': ':.4f'})
-                fig_shap.update_layout(
-                    xaxis_title="Impact sur la probabilité de défaut (valeur SHAP)",
-                    yaxis_title="Caractéristique",
-                    height=400, showlegend=False, yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_shap, use_container_width=True)
-
-                st.markdown("""
-                * Les barres **rouges** indiquent des facteurs qui **augmentent** la probabilité de défaut du client.
-                * Les barres **bleues** indiquent des facteurs qui **diminuent** la probabilité de défaut du client.
-                * Plus la barre est longue, plus l'impact du facteur est important sur la décision du modèle.
-                """)
-            else:
-                st.warning(
-                    "Impossible de calculer les contributions individuelles des features (SHAP values).")
-
-        st.subheader("📑 Informations Descriptives Détaillées du Client")
-
-        client_info_df = pd.DataFrame.from_dict(client_data_for_api, orient='index',
-                                                columns=['Valeur'])
-        client_info_df.index.name = 'Caractéristique'
-        client_info_df.index = client_info_df.index.map(lambda x: FEATURE_DESCRIPTIONS.get(x, x))
-
-        display_df = client_info_df.copy()
-        for idx, row in display_df.iterrows():
-            if 'Âge du client' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
-                display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
-            elif 'Ancienneté d\'emploi' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
-                if row['Valeur'] == 365243:
-                    display_df.loc[idx, 'Valeur'] = "Non employé"
-                else:
-                    display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
-            elif 'Date de fin maximale des crédits passés' in idx and pd.api.types.is_numeric_dtype(
-                    row['Valeur']):
-                if row['Valeur'] < 0:
-                    display_df.loc[
-                        idx, 'Valeur'] = f"Il y a {round(abs(row['Valeur']) / 365.25)} ans"
-                elif row['Valeur'] > 0:
-                    display_df.loc[idx, 'Valeur'] = f"Dans {round(row['Valeur'] / 365.25)} ans"
-                else:
-                    display_df.loc[idx, 'Valeur'] = "Aujourd'hui"
-
-        display_df['Valeur'] = display_df['Valeur'].astype(
-            str)
-
-        st.dataframe(
-            display_df.style.set_properties(**{'background-color': '#f0f2f6', 'color': 'black'}),
-            use_container_width=True)
-        st.write("---")
-
-        st.subheader("🔬 Comparaison avec l'Ensemble des Clients")
-        st.markdown(
-            "Comparez les caractéristiques du client actuel avec la distribution de l'ensemble de notre base de données.")
-
-        comparison_features = [col for col in df_ref.columns if
-                               col in FEATURE_DESCRIPTIONS or col == "_AGE_YEARS" or col == "_EMPLOYED_YEARS_CAT"]
-
-        col_comp1, col_comp2 = st.columns(2)
-
-        with col_comp1:
-            selected_feature_hist_tech_name = st.selectbox(
-                "Sélectionnez une caractéristique à comparer (Histogramme):",
-                comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
-                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'
-            )
-
-            if selected_feature_hist_tech_name:
-                plot_x_axis = selected_feature_hist_tech_name
-                client_value_for_plot_hist = None
-
-                if selected_feature_hist_tech_name == "_AGE_YEARS":
-                    client_value_for_plot_hist = np.abs(
-                        client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
-                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
-                        client_value_for_plot_hist = "Non-employé"
-                    else:
-                        client_value_for_plot_hist = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
-                    # Assurez-vous que la catégorie du client existe dans les catégories du df_ref pour _EMPLOYED_YEARS_CAT
-                    if client_value_for_plot_hist not in df_ref[
-                        '_EMPLOYED_YEARS_CAT'].cat.categories:
-                        df_ref['_EMPLOYED_YEARS_CAT'] = df_ref[
-                            '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_value_for_plot_hist])
-                else:
-                    client_value_for_plot_hist = client_data_for_api.get(
-                        selected_feature_hist_tech_name)
-
-                fig_hist = px.histogram(df_ref, x=plot_x_axis,
-                                        title=f"Distribution de '{FEATURE_DESCRIPTIONS.get(selected_feature_hist_tech_name, selected_feature_hist_tech_name)}' dans la base",
-                                        marginal="box",
-                                        color_discrete_sequence=px.colors.qualitative.Plotly)
-
-                if client_value_for_plot_hist is not None:
-                    if pd.api.types.is_numeric_dtype(df_ref[plot_x_axis]) and isinstance(
-                            client_value_for_plot_hist, (int, float)):
-                        fig_hist.add_vline(x=client_value_for_plot_hist, line_dash="dash",
-                                           line_color="red",
-                                           annotation_text=f"Client: {client_value_for_plot_hist:.2f}",
-                                           annotation_position="top right")
-                    elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
-                        fig_hist.add_annotation(
-                            x=client_value_for_plot_hist, y=1, text=f"Client",
-                            showarrow=True, arrowhead=2, arrowcolor="red", font=dict(color="red"),
-                            yref="paper", xref="x")
-
-                fig_hist.update_layout(height=400)
-                st.plotly_chart(fig_hist, use_container_width=True)
-            else:
-                st.warning("Veuillez sélectionner une caractéristique pour l'histogramme.")
-
-        with col_comp2:
-            st.markdown("### Analyse Bi-variée :")
-            feature_x_tech_name = st.selectbox(
-                "Axe X : Sélectionnez la première caractéristique :",
-                comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
-                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
-                key="feature_x"
-            )
-            feature_y_tech_name = st.selectbox(
-                "Axe Y : Sélectionnez la seconde caractéristique :",
-                comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
-                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
-                key="feature_y"
-            )
-
-            if feature_x_tech_name and feature_y_tech_name:
-                df_temp_scatter = df_ref.copy()
-
-                client_x_val_plot = None
-                if feature_x_tech_name == "_AGE_YEARS":
-                    client_x_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif feature_x_tech_name == "_EMPLOYED_YEARS_CAT":
-                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
-                        client_x_val_plot = "Non-employé"
-                    else:
-                        client_x_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
-                    if client_x_val_plot not in df_temp_scatter[
-                        '_EMPLOYED_YEARS_CAT'].cat.categories:
-                        df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
-                            '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_x_val_plot])
-
-                else:
-                    client_x_val_plot = client_data_for_api.get(feature_x_tech_name)
-
-                client_y_val_plot = None
-                if feature_y_tech_name == "_AGE_YEARS":
-                    client_y_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif feature_y_tech_name == "_EMPLOYED_YEARS_CAT":
-                    if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
-                        client_y_val_plot = "Non-employé"
-                    else:
-                        client_y_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
-                    if client_y_val_plot not in df_temp_scatter[
-                        '_EMPLOYED_YEARS_CAT'].cat.categories:
-                        df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
-                            '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_y_val_plot])
-                else:
-                    client_y_val_plot = client_data_for_api.get(feature_y_tech_name)
-
-                if feature_x_tech_name in df_temp_scatter.columns and feature_y_tech_name in df_temp_scatter.columns:
-                    fig_scatter = px.scatter(
-                        df_temp_scatter.dropna(subset=[feature_x_tech_name, feature_y_tech_name]),
-                        x=feature_x_tech_name, y=feature_y_tech_name,
-                        title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}'",
-                        opacity=0.6,
-                        hover_data={feature_x_tech_name: True, feature_y_tech_name: True},
-                        color_discrete_sequence=px.colors.qualitative.Plotly)
-                    if client_x_val_plot is not None and client_y_val_plot is not None:
-                        x_is_numeric = pd.api.types.is_numeric_dtype(
-                            df_temp_scatter[feature_x_tech_name])
-                        y_is_numeric = pd.api.types.is_numeric_dtype(
-                            df_temp_scatter[feature_y_tech_name])
-
-                        if x_is_numeric and y_is_numeric and isinstance(client_x_val_plot, (
-                        int, float)) and isinstance(client_y_val_plot, (int, float)):
-                            fig_scatter.add_trace(go.Scatter(
-                                x=[client_x_val_plot], y=[client_y_val_plot], mode='markers',
-                                marker=dict(color='red', size=12, symbol='star'),
-                                name='Client Actuel',
-                                hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"))
-
-                    fig_scatter.update_layout(height=400,
-                                              xaxis_title=FEATURE_DESCRIPTIONS.get(
-                                                  feature_x_tech_name,
-                                                  feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
-                                              yaxis_title=FEATURE_DESCRIPTIONS.get(
-                                                  feature_y_tech_name,
-                                                  feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)')
-                    st.plotly_chart(fig_scatter, use_container_width=True)
-                else:
-                    st.warning(
-                        "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées.")
-            else:
-                st.warning("Veuillez sélectionner deux caractéristiques pour l'analyse bi-variée.")
-
-        st.markdown("---")
-        st.subheader("🔍 Autres Graphiques Pertinents")
-
-        if 'AMT_CREDIT' in df_ref.columns and 'NAME_EDUCATION_TYPE' in df_ref.columns:
-            df_temp_box = df_ref.copy()
-            df_temp_box['NAME_EDUCATION_TYPE'] = df_temp_box['NAME_EDUCATION_TYPE'].astype(str)
-
-            fig_box = px.box(df_temp_box, x="NAME_EDUCATION_TYPE", y="AMT_CREDIT",
-                             title="Montant du crédit par niveau d'éducation",
-                             labels={"NAME_EDUCATION_TYPE": FEATURE_DESCRIPTIONS.get(
-                                 "NAME_EDUCATION_TYPE"),
-                                     "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT")},
-                             color="NAME_EDUCATION_TYPE",
-                             color_discrete_map={"Higher education": "blue",
-                                                 "Secondary / secondary special": "green",
-                                                 "Incomplete higher": "orange",
-                                                 "Lower secondary": "red",
-                                                 "Academic degree": "purple", "nan": "gray"})
-            client_edu = client_data_for_api.get('NAME_EDUCATION_TYPE')
-            client_credit = client_data_for_api.get('AMT_CREDIT')
-            if client_edu and client_credit is not None:
-                fig_box.add_trace(go.Scatter(
-                    x=[client_edu], y=[client_credit], mode='markers',
-                    marker=dict(color='red', size=12, symbol='star'), name='Client Actuel',
-                    hovertemplate=f"Client Éducation: {client_edu}<br>Client Crédit: {client_credit}"))
-            fig_box.update_layout(height=400)
-            st.plotly_chart(fig_box, use_container_width=True)
 
     except requests.exceptions.ConnectionError:
         st.error(
             "❌ Impossible de se connecter à l'API. Veuillez vérifier l'URL et que l'API est bien démarrée.")
+        st.session_state.prediction_made = False
     except requests.exceptions.Timeout:
         st.error("⏳ La requête a expiré. L'API est peut-être trop lente ou surchargée.")
+        st.session_state.prediction_made = False
     except requests.exceptions.HTTPError as e:
         st.error(f"⚠️ Erreur HTTP de l'API : {e.response.status_code} - {e.response.text}")
+        st.session_state.prediction_made = False
     except json.JSONDecodeError:
         st.error(
             "🚫 Erreur de décodage JSON de la réponse de l'API. Vérifiez le format de la réponse.")
+        st.session_state.prediction_made = False
     except Exception as e:
         st.error(f"🔥 Une erreur inattendue est survenue : {e}")
         st.exception(e)
-        st.code(traceback.format_exc())
+        st.session_state.prediction_made = False
 
-st.sidebar.markdown("---")
-st.sidebar.header("Accessibilité (WCAG)")
-st.sidebar.markdown("""
-Ce dashboard prend en compte certains critères d'accessibilité :
-* **Critère 1.1.1 Contenu non textuel :** Les graphiques Plotly génèrent des images SVG qui peuvent inclure des balises `<title>` et `<desc>` pour les lecteurs d'écran (support partiel par défaut de Plotly, améliorations possibles via des attributs alt-text si Streamlit le permet directement sur les graphiques).
-* **Critère 1.4.1 Utilisation de la couleur :** Les informations ne sont pas transmises *uniquement* par la couleur (ex: seuil visible avec une ligne pointillée sur la jauge). Les palettes de couleurs sont choisies pour une meilleure différenciation.
-* **Critère 1.4.3 Contraste (minimum) :** Les couleurs de texte et d'arrière-plan de Streamlit sont généralement conformes. Pour les graphiques, des palettes de couleurs contrastées sont utilisées (e.g., `px.colors.diverging.RdBu`).
-* **Critère 1.4.4 Redimensionnement du texte :** Streamlit permet le redimensionnement du texte via les fonctions de zoom du navigateur.
-* **Critère 2.4.2 Titre de page :** Le titre de la page est défini (`st.set_page_config`).
-""")
+
+if st.session_state.prediction_made:
+    prob_default = st.session_state.prediction_results.get("prob_default")
+    pred_class = st.session_state.prediction_results.get("pred_class")
+    optimal_threshold_used = st.session_state.prediction_results.get("optimal_threshold_used")
+    shap_values_raw = st.session_state.prediction_results.get("shap_values_raw")
+    shap_expected_value = st.session_state.prediction_results.get("shap_expected_value")
+    client_data_for_api_display = st.session_state.client_data_for_api_display
+
+    st.subheader("📈 Score de Crédit et Décision")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric(label="Probabilité de Défaut", value=f"{prob_default:.2%}")
+        if prob_default is not None:
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number+delta", value=prob_default * 100,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': "Probabilité de défaut du client"},
+                gauge={'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                       'bar': {'color': "darkblue"},
+                       'steps': [
+                           {'range': [0, optimal_threshold_used * 100], 'color': "lightgreen"},
+                           {'range': [optimal_threshold_used * 100, 100],
+                            'color': "lightcoral"}],
+                       'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75,
+                                     'value': optimal_threshold_used * 100}}))
+            fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
+            st.plotly_chart(fig_gauge, use_container_width=True,
+                            config={'displayModeBar': False})
+
+            st.info(f"Le seuil de décision est de **{optimal_threshold_used:.2%}**.")
+            if pred_class == 0:
+                st.success(
+                    f"**Décision : CRÉDIT ACCORDÉ** (Probabilité de défaut : {prob_default:.2%}, inférieure au seuil)")
+            else:
+                st.error(
+                    f"**Décision : CRÉDIT REFUSÉ** (Probabilité de défaut : {prob_default:.2%}, supérieure ou égale au seuil)")
+
+    with col2:
+        st.subheader("Interprétation du Score (Facteurs influents)")
+        if shap_values_raw and "error" not in shap_values_raw and shap_values_raw != {
+            "info": "SHAP explainer non disponible ou non initialisé."}:
+            shap_df = pd.DataFrame(shap_values_raw.items(), columns=['feature', 'shap_value'])
+            shap_df['abs_shap_value'] = np.abs(shap_df['shap_value'])
+            shap_df = shap_df.sort_values(by='abs_shap_value', ascending=False).head(10)
+            shap_df['feature_display_name'] = shap_df['feature'].map(
+                FEATURE_DESCRIPTIONS).fillna(shap_df['feature'])
+
+            fig_shap = px.bar(
+                shap_df, x='shap_value', y='feature_display_name', orientation='h',
+                title='Top 10 des facteurs influençant la décision pour ce client',
+                labels={'shap_value': 'Impact sur la probabilité de défaut (valeur SHAP)',
+                        'feature_display_name': 'Caractéristique'},
+                color='shap_value', color_continuous_scale=px.colors.diverging.RdBu,
+                hover_data={'shap_value': ':.4f'})
+            fig_shap.update_layout(
+                xaxis_title="Impact sur la probabilité de défaut (valeur SHAP)",
+                yaxis_title="Caractéristique",
+                height=400, showlegend=False, yaxis={'categoryorder': 'total ascending'})
+            st.plotly_chart(fig_shap, use_container_width=True)
+
+            st.markdown("""
+            * Les barres **rouges** indiquent des facteurs qui **augmentent** la probabilité de défaut du client.
+            * Les barres **bleues** indiquent des facteurs qui **diminuent** la probabilité de défaut du client.
+            * Plus la barre est longue, plus l'impact du facteur est important sur la décision du modèle.
+            """)
+        else:
+            st.warning(
+                "Impossible de calculer les contributions individuelles des features (SHAP values).")
+
+    st.subheader("📑 Informations Descriptives Détaillées du Client")
+
+    client_info_df = pd.DataFrame.from_dict(client_data_for_api_display, orient='index',
+                                            columns=['Valeur'])
+    client_info_df.index.name = 'Caractéristique'
+    client_info_df.index = client_info_df.index.map(lambda x: FEATURE_DESCRIPTIONS.get(x, x))
+
+    display_df = client_info_df.copy()
+    for idx, row in display_df.iterrows():
+        if 'Âge du client' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
+            display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
+        elif 'Ancienneté d\'emploi' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
+            if row['Valeur'] == 365243:
+                display_df.loc[idx, 'Valeur'] = "Non employé"
+            else:
+                display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
+        elif 'Date de fin maximale des crédits passés' in idx and pd.api.types.is_numeric_dtype(
+                row['Valeur']):
+            if row['Valeur'] < 0:
+                display_df.loc[
+                    idx, 'Valeur'] = f"Il y a {round(abs(row['Valeur']) / 365.25)} ans"
+            elif row['Valeur'] > 0:
+                display_df.loc[idx, 'Valeur'] = f"Dans {round(row['Valeur'] / 365.25)} ans"
+            else:
+                display_df.loc[idx, 'Valeur'] = "Aujourd'hui"
+
+    display_df['Valeur'] = display_df['Valeur'].astype(str)
+
+    st.dataframe(
+        display_df.style.set_properties(**{'background-color': '#f0f2f6', 'color': 'black'}),
+        use_container_width=True)
+    st.write("---")
+
+    st.subheader("🔬 Comparaison avec l'Ensemble des Clients")
+    st.markdown(
+        "Comparez les caractéristiques du client actuel avec la distribution de l'ensemble de notre base de données.")
+
+    comparison_features = [col for col in df_ref.columns if
+                           col in FEATURE_DESCRIPTIONS or col == "_AGE_YEARS" or col == "_EMPLOYED_YEARS_CAT"]
+
+    col_comp1, col_comp2 = st.columns(2)
+
+    with col_comp1:
+        selected_feature_hist_tech_name = st.selectbox(
+            "Sélectionnez une caractéristique à comparer (Histogramme):",
+            comparison_features,
+            format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                           x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'
+        )
+
+        if selected_feature_hist_tech_name:
+            plot_x_axis = selected_feature_hist_tech_name
+            client_value_for_plot_hist = None
+
+            if selected_feature_hist_tech_name == "_AGE_YEARS":
+                client_value_for_plot_hist = np.abs(
+                    st.session_state.client_data_for_api_display.get("DAYS_BIRTH")) / 365.25
+            elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
+                if st.session_state.client_data_for_api_display.get("DAYS_EMPLOYED") == 365243:
+                    client_value_for_plot_hist = "Non-employé"
+                else:
+                    client_value_for_plot_hist = f"{round(np.abs(st.session_state.client_data_for_api_display.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                if client_value_for_plot_hist not in df_ref[
+                    '_EMPLOYED_YEARS_CAT'].cat.categories:
+                    df_ref['_EMPLOYED_YEARS_CAT'] = df_ref[
+                        '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_value_for_plot_hist])
+            else:
+                client_value_for_plot_hist = st.session_state.client_data_for_api_display.get(
+                    selected_feature_hist_tech_name)
+
+            fig_hist = px.histogram(df_ref, x=plot_x_axis,
+                                    title=f"Distribution de '{FEATURE_DESCRIPTIONS.get(selected_feature_hist_tech_name, selected_feature_hist_tech_name)}' dans la base",
+                                    marginal="box",
+                                    color_discrete_sequence=px.colors.qualitative.Plotly)
+
+            if client_value_for_plot_hist is not None:
+                if pd.api.types.is_numeric_dtype(df_ref[plot_x_axis]) and isinstance(
+                        client_value_for_plot_hist, (int, float)):
+                    fig_hist.add_vline(x=client_value_for_plot_hist, line_dash="dash",
+                                       line_color="red",
+                                       annotation_text=f"Client: {client_value_for_plot_hist:.2f}",
+                                       annotation_position="top right")
+                elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
+                    fig_hist.add_annotation(
+                        x=client_value_for_plot_hist, y=1, text=f"Client",
+                        showarrow=True, arrowhead=2, arrowcolor="red", font=dict(color="red"),
+                        yref="paper", xref="x")
+
+            fig_hist.update_layout(height=400)
+            st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.warning("Veuillez sélectionner une caractéristique pour l'histogramme.")
+
+    with col_comp2:
+        st.markdown("### Analyse Bi-variée :")
+        feature_x_tech_name = st.selectbox(
+            "Axe X : Sélectionnez la première caractéristique :",
+            comparison_features,
+            format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                           x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
+            key="feature_x"
+        )
+        feature_y_tech_name = st.selectbox(
+            "Axe Y : Sélectionnez la seconde caractéristique :",
+            comparison_features,
+            format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                           x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
+            key="feature_y"
+        )
+
+        if feature_x_tech_name and feature_y_tech_name:
+            df_temp_scatter = df_ref.copy()
+
+            client_x_val_plot = None
+            if feature_x_tech_name == "_AGE_YEARS":
+                client_x_val_plot = np.abs(st.session_state.client_data_for_api_display.get("DAYS_BIRTH")) / 365.25
+            elif feature_x_tech_name == "_EMPLOYED_YEARS_CAT":
+                if st.session_state.client_data_for_api_display.get("DAYS_EMPLOYED") == 365243:
+                    client_x_val_plot = "Non-employé"
+                else:
+                    client_x_val_plot = f"{round(np.abs(st.session_state.client_data_for_api_display.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                if client_x_val_plot not in df_temp_scatter[
+                    '_EMPLOYED_YEARS_CAT'].cat.categories:
+                    df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
+                        '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_x_val_plot])
+
+            else:
+                client_x_val_plot = st.session_state.client_data_for_api_display.get(feature_x_tech_name)
+
+            client_y_val_plot = None
+            if feature_y_tech_name == "_AGE_YEARS":
+                client_y_val_plot = np.abs(st.session_state.client_data_for_api_display.get("DAYS_BIRTH")) / 365.25
+            elif feature_y_tech_name == "_EMPLOYED_YEARS_CAT":
+                if st.session_state.client_data_for_api_display.get("DAYS_EMPLOYED") == 365243:
+                    client_y_val_plot = "Non-employé"
+                else:
+                    client_y_val_plot = f"{round(np.abs(st.session_state.client_data_for_api_display.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                if client_y_val_plot not in df_temp_scatter[
+                    '_EMPLOYED_YEARS_CAT'].cat.categories:
+                    df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
+                        '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_y_val_plot])
+            else:
+                client_y_val_plot = st.session_state.client_data_for_api_display.get(feature_y_tech_name)
+
+
+            if feature_x_tech_name in df_temp_scatter.columns and feature_y_tech_name in df_temp_scatter.columns:
+                fig_scatter = px.scatter(
+                    df_temp_scatter.dropna(subset=[feature_x_tech_name, feature_y_tech_name]),
+                    x=feature_x_tech_name, y=feature_y_tech_name,
+                    title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}'",
+                    opacity=0.6,
+                    hover_data={feature_x_tech_name: True, feature_y_tech_name: True},
+                    color_discrete_sequence=px.colors.qualitative.Plotly)
+                if client_x_val_plot is not None and client_y_val_plot is not None:
+                    x_is_numeric = pd.api.types.is_numeric_dtype(
+                        df_temp_scatter[feature_x_tech_name])
+                    y_is_numeric = pd.api.types.is_numeric_dtype(
+                        df_temp_scatter[feature_y_tech_name])
+
+                    if x_is_numeric and y_is_numeric and isinstance(client_x_val_plot, (
+                    int, float)) and isinstance(client_y_val_plot, (int, float)):
+                        fig_scatter.add_trace(go.Scatter(
+                            x=[client_x_val_plot], y=[client_y_val_plot], mode='markers',
+                            marker=dict(color='red', size=12, symbol='star'),
+                            name='Client Actuel',
+                            hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"))
+
+                fig_scatter.update_layout(height=400,
+                                          xaxis_title=FEATURE_DESCRIPTIONS.get(
+                                              feature_x_tech_name,
+                                              feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
+                                          yaxis_title=FEATURE_DESCRIPTIONS.get(
+                                              feature_y_tech_name,
+                                              feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)')
+                st.plotly_chart(fig_scatter, use_container_width=True)
+            else:
+                st.warning(
+                    "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées.")
+        else:
+            st.warning("Veuillez sélectionner deux caractéristiques pour l'analyse bi-variée.")
+
+    st.markdown("---")
+    st.subheader("🔍 Autres Graphiques Pertinents")
+
+    if 'AMT_CREDIT' in df_ref.columns and 'NAME_EDUCATION_TYPE' in df_ref.columns:
+        df_temp_box = df_ref.copy()
+        df_temp_box['NAME_EDUCATION_TYPE'] = df_temp_box['NAME_EDUCATION_TYPE'].astype(str)
+
+        fig_box = px.box(df_temp_box, x="NAME_EDUCATION_TYPE", y="AMT_CREDIT",
+                         title="Montant du crédit par niveau d'éducation",
+                         labels={"NAME_EDUCATION_TYPE": FEATURE_DESCRIPTIONS.get(
+                             "NAME_EDUCATION_TYPE"),
+                                 "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT")},
+                         color="NAME_EDUCATION_TYPE",
+                         color_discrete_map={"Higher education": "blue",
+                                             "Secondary / secondary special": "green",
+                                             "Incomplete higher": "orange",
+                                             "Lower secondary": "red",
+                                             "Academic degree": "purple", "nan": "gray"})
+        client_edu = st.session_state.client_data_for_api_display.get('NAME_EDUCATION_TYPE')
+        client_credit = st.session_state.client_data_for_api_display.get('AMT_CREDIT')
+        if client_edu and client_credit is not None:
+            fig_box.add_trace(go.Scatter(
+                x=[client_edu], y=[client_credit], mode='markers',
+                marker=dict(color='red', size=12, symbol='star'), name='Client Actuel',
+                hovertemplate=f"Client Éducation: {client_edu}<br>Client Crédit: {client_credit}"))
+        fig_box.update_layout(height=400)
+        st.plotly_chart(fig_box, use_container_width=True)
+
 
 st.sidebar.markdown("---")
 st.sidebar.header("Accessibilité (WCAG)")
