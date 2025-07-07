@@ -842,10 +842,11 @@ if st.session_state.prediction_made:
 st.sidebar.markdown("---")
 st.sidebar.header("Accessibilité (WCAG)")
 st.sidebar.markdown("""
-Ce dashboard prend en compte certains critères d'accessibilité :
-* **Critère 1.1.1 Contenu non textuel :** Les graphiques Plotly génèrent des images SVG qui peuvent inclure des balises `<title>` et `<desc>` pour les lecteurs d'écran (support partiel par défaut de Plotly, améliorations possibles via des attributs alt-text si Streamlit le permet directement sur les graphiques).
-* **Critère 1.4.1 Utilisation de la couleur :** Les informations ne sont pas transmises *uniquement* par la couleur (ex: seuil visible avec une ligne pointillée sur la jauge). Les palettes de couleurs sont choisies pour une meilleure différenciation.
-* **Critère 1.4.3 Contraste (minimum) :** Les couleurs de texte et d'arrière-plan de Streamlit sont généralement conformes. Pour les graphiques, des palettes de couleurs contrastées sont utilisées (e.g., `px.colors.diverging.RdBu`).
-* **Critère 1.4.4 Redimensionnement du texte :** Streamlit permet le redimensionnement du texte via les fonctions de zoom du navigateur.
-* **Critère 2.4.2 Titre de page :** Le titre de la page est défini (`st.set_page_config`).
+Ce dashboard intègre des critères d'accessibilité clés du WCAG :
+
+* **Critère 1.1.1 Contenu non textuel** : Les graphiques Plotly sont générés en SVG, pouvant inclure des balises `<title>` et `<desc>` pour les lecteurs d'écran. Plotly offre un support partiel par défaut, avec des améliorations potentielles via des attributs alt-text si Streamlit le permet directement sur les graphiques.
+* **Critère 1.4.1 Utilisation de la couleur** : Les informations essentielles ne reposent pas uniquement sur la couleur. Par exemple, le seuil sur la jauge de probabilité est également indiqué par une ligne pointillée. Les palettes de couleurs sélectionnées visent une meilleure différenciation visuelle.
+* **Critère 1.4.3 Contraste (minimum)** : Les couleurs de texte et d'arrière-plan de l'interface Streamlit respectent généralement les normes de contraste. Pour les graphiques, des palettes de couleurs contrastées, comme `px.colors.diverging.RdBu`, sont employées.
+* **Critère 1.4.4 Redimensionnement du texte** : La fonctionnalité de zoom des navigateurs permet le redimensionnement du texte de l'application Streamlit.
+* **Critère 2.4.2 Titre de page** : Un titre de page explicite est défini via `st.set_page_config`.
 """)
