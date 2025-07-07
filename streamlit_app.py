@@ -6,6 +6,501 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import shap
+
+FEATURE_DESCRIPTIONS = {
+    "EXT_SOURCE_1": "Score Source Externe 1 (information financière externe)",
+    "EXT_SOURCE_3": "Score Source Externe 3 (information financière externe)",
+    "AMT_CREDIT": "Montant du crédit demandé",
+    "DAYS_BIRTH": "Âge du client (en jours, négatif)",
+    "EXT_SOURCE_2": "Score Source Externe 2 (information financière externe)",
+    "AMT_ANNUITY": "Montant des annuités du prêt",
+    "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": "Moyenne des échéances futures impayées (crédits précédents)",
+    "DAYS_ID_PUBLISH": "Ancienneté de la dernière mise à jour de l'ID (en jours, négatif)",
+    "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": "Date de fin maximale des crédits passés (en jours)",
+    "DAYS_EMPLOYED": "Ancienneté d'emploi actuelle (en jours, négatif, 365243 si non employé)",
+    "CODE_GENDER": "Genre",
+    "NAME_EDUCATION_TYPE": "Niveau d'éducation",
+    "NAME_FAMILY_STATUS": "Statut familial",
+    "AMT_INCOME_TOTAL": "Revenu annuel total",
+    "CNT_CHILDREN": "Nombre d'enfants",
+    "FLAG_OWN_CAR": "Possède une voiture",
+    "FLAG_OWN_REALTY": "Possède un bien immobilier",
+    "OCCUPATION_TYPE": "Type d'emploi",
+    "REGION_POPULATION_RELATIVE": "Densité de population de la région de résidence",
+    "HOUR_APPR_PROCESS_START": "Heure de début de la demande",
+    "SK_ID_CURR_AMT_GOODS_PRICE_mean": "Moyenne du prix des biens des anciens crédits",
+    "SK_ID_CURR_AMT_PAYMENT_CURRENT_mean": "Moyenne des paiements actuels des crédits",
+    "SK_ID_CURR_AMT_INSTALMENT_mean": "Moyenne des montants d'échéances des anciens crédits",
+    "SK_ID_CURR_AMT_CREDIT_SUM_DEBT_sum": "Somme des dettes des anciens crédits",
+    "SK_ID_CURR_AMT_ANNUITY_mean": "Moyenne des annuités des anciens crédits",
+    "SK_ID_CURR_AMT_TOTAL_RECEIVABLE_sum": "Somme des montants totaux à recevoir des anciens crédits",
+    "SK_ID_CURR_AMT_TOTAL_RECEIVABLE_max": "Maximum du montant total à recevoir des anciens crédits",
+    "SK_ID_CURR_AMT_RECEIVABLE_PRINCIPAL_sum": "Somme du capital à recevoir des anciens crédits",
+    "SK_ID_CURR_AMT_CREDIT_SUM_sum": "Somme des montants de crédit des anciens crédits",
+    "SK_ID_CURR_CNT_INSTALMENT_mean": "Moyenne du nombre d'échéances des anciens crédits",
+    "SK_ID_CURR_MONTHS_BALANCE_max_x": "Mois maximal de l'historique de bureau",
+    "SK_ID_CURR_PAYMENT_DIFF_sum": "Somme des différences de paiement des anciens crédits",
+    "SK_ID_CURR_CNT_INSTALMENT_max": "Maximum du nombre d'échéances des anciens crédits",
+    "SK_ID_CURR_DBD_sum_x": "Somme des jours avant la date de paiement (bureau)",
+    "SK_ID_CURR_DBD_max_y": "Maximum des jours avant la date de paiement (POS/Cash)",
+    "SK_ID_CURR_AMT_CREDIT_LIMIT_ACTUAL_min": "Minimum du montant de la limite de crédit actuelle",
+    "SK_ID_CURR_AMT_DRAWINGS_POS_CURRENT_mean": "Moyenne des retraits POS actuels",
+    "SK_ID_CURR_SK_DPD_mean_x": "Moyenne des jours d'arriérés (bureau)",
+    "SK_ID_CURR_CNT_DRAWINGS_POS_CURRENT_sum": "Somme des retraits POS actuels",
+    "SK_ID_CURR_DBD_mean_y": "Moyenne des jours avant la date de paiement (POS/Cash)",
+    "SK_ID_CURR_CNT_DRAWINGS_ATM_CURRENT_sum": "Somme des retraits ATM actuels",
+    "SK_ID_CURR_AMT_CREDIT_SUM_DEBT_mean": "Moyenne de la dette des anciens crédits",
+    "SK_ID_CURR_SK_DPD_mean_y": "Moyenne des jours d'arriérés par définition (POS/Cash)",
+    "SK_ID_CURR_CNT_DRAWINGS_ATM_CURRENT_max": "Maximum des retraits ATM actuels",
+    "SK_ID_CURR_MONTHS_BALANCE_min_y": "Mois minimal de l'historique de solde (POS/Cash)",
+    "SK_ID_CURR_DPD_sum_y": "Somme des jours d'arriérés (POS/Cash)",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Medicine_mean": "Moyenne des prêts pour Médicaments",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Spouse_partner_mean": "Moyenne des clients accompagnés par conjoint/partenaire",
+    "SK_ID_CURR_CHANNEL_TYPE_Stone_mean": "Moyenne des demandes via canal 'Stone'",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Refused_mean_y": "Moyenne des contrats refusés (précédentes applications)",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_XNA_mean": "Moyenne des contrats au statut non spécifié",
+    "SK_ID_CURR_SK_DPD_DEF_max_x": "Maximum des jours d'arriérés par définition (bureau)",
+    "SK_ID_CURR_CODE_REJECT_REASON_XNA_mean": "Moyenne des raisons de rejet non spécifiées",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_MONDAY_mean": "Moyenne des demandes commencées un lundi",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Other_mean": "Moyenne des prêts pour Autres biens",
+    "SK_ID_CURR_CREDIT_TYPE_Car_loan_mean": "Moyenne des prêts automobiles",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Canceled_mean_x": "Moyenne des contrats annulés (bureau)",
+    "SK_ID_CURR_CNT_DRAWINGS_CURRENT_mean": "Moyenne des retraits actuels",
+    "SK_ID_CURR_CHANNEL_TYPE_Channel_of_corporate_sales_mean": "Moyenne des demandes via canal de ventes corporate",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_House_Construction_mean": "Moyenne des prêts pour Construction de maison",
+    "SK_ID_CURR_CREDIT_TYPE_Mortgage_mean": "Moyenne des prêts hypothécaires",
+    "SK_ID_CURR_NAME_YIELD_GROUP_low_action_mean": "Moyenne des groupes de rendement 'faible action'",
+    "SK_ID_CURR_CODE_REJECT_REASON_XAP_mean": "Moyenne des rejets par XAP",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Jewelry_mean": "Moyenne des prêts pour Bijoux",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Sent_proposal_mean": "Moyenne des contrats avec proposition envoyée",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_THURSDAY_mean": "Moyenne des demandes commencées un jeudi",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_AudioVideo_mean": "Moyenne des prêts pour Audio/Vidéo",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Car_repairs_mean": "Moyenne des prêts pour Réparations automobiles",
+    "SK_ID_CURR_CODE_REJECT_REASON_CLIENT_mean": "Moyenne des rejets par décision client",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Signed_mean_y": "Moyenne des contrats signés (précédentes applications)",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Homewares_mean": "Moyenne des prêts pour Articles ménagers",
+    "SK_ID_CURR_NAME_PAYMENT_TYPE_Noncash_from_your_account_mean": "Moyenne des paiements non cash depuis compte",
+    "SK_ID_CURR_NAME_CLIENT_TYPE_New_mean": "Moyenne des clients de type 'Nouveau'",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Active_mean_y": "Moyenne des contrats actifs (précédentes applications)",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Consumer_Electronics_mean": "Moyenne des prêts pour Électronique grand public",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Purchase_of_electronic_equipment_mean": "Moyenne des prêts pour Achat d'équipement électronique",
+    "SK_ID_CURR_NAME_CLIENT_TYPE_XNA_mean": "Moyenne des clients de type non spécifié",
+    "SK_ID_CURR_NAME_PRODUCT_TYPE_walkin_mean": "Moyenne des produits de type 'walk-in'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Education_mean": "Moyenne des prêts pour Éducation",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Medicine_mean": "Moyenne des prêts pour Médicaments",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Completed_mean_y": "Moyenne des contrats complétés (précédentes applications)",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Photo__Cinema_Equipment_mean": "Moyenne des prêts pour Équipement photo/cinéma",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Connectivity_mean": "Moyenne des demandes via industrie 'Connectivité'",
+    "SK_ID_CURR_NAME_PAYMENT_TYPE_Cashless_from_the_account_of_the_employer_mean": "Moyenne des paiements sans cash depuis compte employeur",
+    "SK_ID_CURR_CREDIT_TYPE_Real_estate_loan_mean": "Moyenne des prêts immobiliers",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Auto_Accessories_mean": "Moyenne des prêts pour Accessoires auto",
+    "SK_ID_CURR_CHANNEL_TYPE_Credit_and_cash_offices_mean": "Moyenne des demandes via bureaux de crédit et cash",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Refusal_to_name_the_goal_mean": "Moyenne des prêts avec refus de spécifier le but",
+    "SK_ID_CURR_CREDIT_TYPE_Consumer_credit_mean": "Moyenne des crédits à la consommation",
+    "SK_ID_CURR_CREDIT_TYPE_Interbank_credit_mean": "Moyenne des crédits interbancaires",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_XNA_mean": "Moyenne des prêts avec but non spécifié",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Urgent_needs_mean": "Moyenne des prêts pour Besoins urgents",
+    "SK_ID_CURR_RATE_INTEREST_PRIVILEGED_mean": "Moyenne du taux d'intérêt privilégié",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Office_Appliances_mean": "Moyenne des prêts pour Appareils de bureau",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Wedding__gift__holiday_mean": "Moyenne des prêts pour Mariage, cadeau, vacances",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_TUESDAY_mean": "Moyenne des demandes commencées un mardi",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Approved_mean": "Moyenne des contrats approuvés",
+    "SK_ID_CURR_CODE_REJECT_REASON_SCO_mean": "Moyenne des rejets par SCO",
+    "SK_ID_CURR_CREDIT_ACTIVE_Sold_mean": "Moyenne des crédits 'vendus'",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Demand_mean_y": "Moyenne des contrats demandés (précédentes applications)",
+    "SK_ID_CURR_NAME_PORTFOLIO_Cards_mean": "Moyenne des portefeuilles de type 'Cartes'",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Buying_a_garage_mean": "Moyenne des prêts pour Achat de garage",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Animals_mean": "Moyenne des prêts pour Animaux",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Clothing_and_Accessories_mean": "Moyenne des prêts pour Vêtements et accessoires",
+    "SK_ID_CURR_CHANNEL_TYPE_Contact_center_mean": "Moyenne des demandes via centre d'appels",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Construction_Materials_mean": "Moyenne des prêts pour Matériaux de construction",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Buying_a_home_mean": "Moyenne des prêts pour Achat d'une maison",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_XAP_mean": "Moyenne des prêts avec but 'XAP'",
+    "SK_ID_CURR_CREDIT_TYPE_Loan_for_working_capital_replenishment_mean": "Moyenne des prêts pour réapprovisionnement fonds de roulement",
+    "SK_ID_CURR_CREDIT_TYPE_Another_type_of_loan_mean": "Moyenne des autres types de prêts",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Fitness_mean": "Moyenne des prêts pour Fitness",
+    "SK_ID_CURR_NAME_PORTFOLIO_POS_mean": "Moyenne des portefeuilles de type 'POS'",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_SATURDAY_mean": "Moyenne des demandes commencées un samedi",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Gasification__water_supply_mean": "Moyenne des prêts pour Gazification, approvisionnement en eau",
+    "SK_ID_CURR_NAME_YIELD_GROUP_high_mean": "Moyenne des groupes de rendement 'élevé'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Gardening_mean": "Moyenne des prêts pour Jardinage",
+    "SK_ID_CURR_FLAG_LAST_APPL_PER_CONTRACT_Y_mean": "Moyenne du flag 'dernière application par contrat' à Oui",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_WEDNESDAY_mean": "Moyenne des demandes commencées un mercredi",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Industry_mean": "Moyenne des demandes via industrie 'Industrie'",
+    "SK_ID_CURR_NAME_PRODUCT_TYPE_xsell_mean": "Moyenne des produits de type 'cross-sell'",
+    "SK_ID_CURR_CODE_REJECT_REASON_LIMIT_mean": "Moyenne des rejets par limite",
+    "SK_ID_CURR_CREDIT_TYPE_Loan_for_business_development_mean": "Moyenne des prêts pour développement commercial",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Unaccompanied_mean": "Moyenne des clients non accompagnés",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Additional_Service_mean": "Moyenne des prêts pour Services additionnels",
+    "SK_ID_CURR_CHANNEL_TYPE_AP_Cash_loan_mean": "Moyenne des demandes via canal 'AP Cash loan'",
+    "SK_ID_CURR_NAME_CONTRACT_TYPE_Cash_loans_mean": "Moyenne des contrats de type 'Prêts en espèces'",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_MLM_partners_mean": "Moyenne des demandes via industrie 'Partenaires MLM'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Medical_Supplies_mean": "Moyenne des prêts pour Fournitures médicales",
+    "SK_ID_CURR_CREDIT_TYPE_Cash_loan_nonearmarked_mean": "Moyenne des prêts en espèces non affectés",
+    "SK_ID_CURR_CREDIT_ACTIVE_Closed_mean": "Moyenne des crédits 'fermés'",
+    "SK_ID_CURR_NAME_CLIENT_TYPE_Repeater_mean": "Moyenne des clients de type 'Répéteur'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Direct_Sales_mean": "Moyenne des prêts pour Ventes directes",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Computers_mean": "Moyenne des prêts pour Ordinateurs",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Clothing_mean": "Moyenne des demandes via industrie 'Vêtements'",
+    "SK_ID_CURR_CREDIT_TYPE_Credit_card_mean": "Moyenne des crédits par carte",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Returned_to_the_store_mean": "Moyenne des contrats retournés au magasin",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Other_A_mean": "Moyenne des clients accompagnés par 'Autre A'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Furniture_mean": "Moyenne des prêts pour Meubles",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Vehicles_mean": "Moyenne des prêts pour Véhicules",
+    "SK_ID_CURR_NAME_YIELD_GROUP_middle_mean": "Moyenne des groupes de rendement 'moyen'",
+    "YEARS_BEGINEXPLUATATION_AVG": "Moyenne des années de début d'exploitation",
+    "SK_ID_CURR_NAME_CONTRACT_TYPE_Consumer_loans_mean": "Moyenne des contrats de type 'Crédits à la consommation'",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Repairs_mean": "Moyenne des prêts pour Réparations",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Building_a_house_or_an_annex_mean": "Moyenne des prêts pour Construction de maison ou annexe",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Hobby_mean": "Moyenne des prêts pour Loisirs",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Canceled_mean_y": "Moyenne des contrats annulés (précédentes applications)",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Other_B_mean": "Moyenne des clients accompagnés par 'Autre B'",
+    "SK_ID_CURR_NAME_PORTFOLIO_Cars_mean": "Moyenne des portefeuilles de type 'Voitures'",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Furniture_mean": "Moyenne des prêts pour Meubles",
+    "SK_ID_CURR_NAME_PRODUCT_TYPE_XNA_mean": "Moyenne des produits de type non spécifié",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Children_mean": "Moyenne des clients accompagnés par des enfants",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Auto_technology_mean": "Moyenne des demandes via industrie 'Technologie auto'",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Amortized_debt_mean": "Moyenne des dettes amorties",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Refused_mean_x": "Moyenne des contrats refusés (bureau)",
+    "SK_ID_CURR_CREDIT_ACTIVE_Bad_debt_mean": "Moyenne des créances irrécouvrables",
+    "SK_ID_CURR_NAME_YIELD_GROUP_low_normal_mean": "Moyenne des groupes de rendement 'faible normal'",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_FRIDAY_mean": "Moyenne des demandes commencées un vendredi",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Completed_mean_x": "Moyenne des contrats complétés (bureau)",
+    "SK_ID_CURR_CHANNEL_TYPE_Car_dealer_mean": "Moyenne des demandes via concessionnaire auto",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Construction_mean": "Moyenne des demandes via industrie 'Construction'",
+    "SK_ID_CURR_NAME_CONTRACT_TYPE_XNA_mean": "Moyenne des contrats de type non spécifié",
+    "SK_ID_CURR_CHANNEL_TYPE_Countrywide_mean": "Moyenne des demandes via canal 'National'",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Signed_mean_x": "Moyenne des contrats signés (bureau)",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Active_mean_x": "Moyenne des contrats actifs (bureau)",
+    "SK_ID_CURR_NAME_PORTFOLIO_Cash_mean": "Moyenne des portefeuilles de type 'Cash'",
+    "SK_ID_CURR_NAME_YIELD_GROUP_XNA_mean": "Moyenne des groupes de rendement non spécifiés",
+    "SK_ID_CURR_CREDIT_TYPE_Microloan_mean": "Moyenne des microcrédits",
+    "SK_ID_CURR_CHANNEL_TYPE_Regional__Local_mean": "Moyenne des demandes via canal 'Régional/Local'",
+    "SK_ID_CURR_CREDIT_TYPE_Loan_for_the_purchase_of_equipment_mean": "Moyenne des prêts pour l'achat d'équipement",
+    "SK_ID_CURR_CODE_REJECT_REASON_HC_mean": "Moyenne des rejets par 'HC'",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Group_of_people_mean": "Moyenne des clients accompagnés par un groupe",
+    "SK_ID_CURR_CODE_REJECT_REASON_SCOFR_mean": "Moyenne des rejets par 'SCOFR'",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Everyday_expenses_mean": "Moyenne des prêts pour Dépenses quotidiennes",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Tourism_mean": "Moyenne des prêts pour Tourisme",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Mobile_mean": "Moyenne des prêts pour Mobile",
+    "SK_ID_CURR_CREDIT_ACTIVE_Active_mean": "Moyenne des crédits 'actifs'",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Money_for_a_third_person_mean": "Moyenne des prêts pour Argent pour une tierce personne",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Other_mean": "Moyenne des prêts pour Autres buts",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Tourism_mean": "Moyenne des demandes via industrie 'Tourisme'",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Insurance_mean": "Moyenne des prêts pour Assurance",
+    "SK_ID_CURR_CREDIT_TYPE_Loan_for_purchase_of_shares_margin_lending_mean": "Moyenne des prêts pour achat d'actions/marge",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Business_development_mean": "Moyenne des prêts pour Développement commercial",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Unused_offer_mean": "Moyenne des offres non utilisées",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_XNA_mean": "Moyenne des prêts pour biens non spécifiés",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Furniture_mean": "Moyenne des demandes via industrie 'Meubles'",
+    "SK_ID_CURR_CREDIT_TYPE_Mobile_operator_loan_mean": "Moyenne des prêts d'opérateur mobile",
+    "SK_ID_CURR_CODE_REJECT_REASON_SYSTEM_mean": "Moyenne des rejets par système",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Education_mean": "Moyenne des prêts pour Éducation",
+    "SK_ID_CURR_WEEKDAY_APPR_PROCESS_START_SUNDAY_mean": "Moyenne des demandes commencées un dimanche",
+    "SK_ID_CURR_NAME_PAYMENT_TYPE_Cash_through_the_bank_mean": "Moyenne des paiements en espèces via banque",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Payments_on_other_loans_mean": "Moyenne des prêts pour Paiements sur autres prêts",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Sport_and_Leisure_mean": "Moyenne des prêts pour Sport et Loisirs",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Approved_mean_y": "Moyenne des contrats approuvés (précédentes applications)",
+    "SK_ID_CURR_CREDIT_TYPE_Unknown_type_of_loan_mean": "Moyenne des types de prêts inconnus",
+    "SK_ID_CURR_NAME_PAYMENT_TYPE_XNA_mean": "Moyenne des types de paiement non spécifiés",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Buying_a_used_car_mean": "Moyenne des prêts pour Achat de voiture d'occasion",
+    "SK_ID_CURR_NAME_CONTRACT_STATUS_Demand_mean_x": "Moyenne des contrats demandés (bureau)",
+    "SK_ID_CURR_NAME_TYPE_SUITE_Family_mean": "Moyenne des clients accompagnés par famille",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_XNA_mean": "Moyenne des demandes via industrie non spécifiée",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Buying_a_new_car_mean": "Moyenne des prêts pour Achat de voiture neuve",
+    "SK_ID_CURR_NAME_CONTRACT_TYPE_Revolving_loans_mean": "Moyenne des prêts revolving",
+    "SK_ID_CURR_NAME_GOODS_CATEGORY_Weapon_mean": "Moyenne des prêts pour Armes",
+    "SK_ID_CURR_CODE_REJECT_REASON_VERIF_mean": "Moyenne des rejets par vérification",
+    "SK_ID_CURR_NAME_PORTFOLIO_XNA_mean": "Moyenne des portefeuilles de type non spécifié",
+    "SK_ID_CURR_NAME_CASH_LOAN_PURPOSE_Journey_mean": "Moyenne des prêts pour Voyage",
+    "SK_ID_CURR_NAME_SELLER_INDUSTRY_Consumer_electronics_mean": "Moyenne des demandes via industrie 'Électronique grand public'",
+    "SK_ID_CURR_AMT_CREDIT_mean": "Moyenne du montant du crédit des anciens crédits",
+    "SK_ID_CURR_AMT_DRAWINGS_CURRENT_mean": "Moyenne des retraits actuels",
+    "NAME_CONTRACT_TYPE": "Type de contrat",
+    "NAME_TYPE_SUITE": "Type d'accompagnement de la demande",
+    "NAME_INCOME_TYPE": "Type de revenu",
+    "NAME_HOUSING_TYPE": "Type de logement",
+    "WEEKDAY_APPR_PROCESS_START": "Jour de la semaine de la demande",
+    "ORGANIZATION_TYPE": "Type d'organisation de l'emploi",
+    "FONDKAPREMONT_MODE": "Mode de financement de la réparation capitale",
+    "HOUSETYPE_MODE": "Type de maison",
+    "WALLSMATERIAL_MODE": "Matériau des murs",
+    "EMERGENCYSTATE_MODE": "État d'urgence du bâtiment",
+    "REGION_RATING_CLIENT": "Notation de la région (par le client)",
+    "REGION_RATING_CLIENT_W_CITY": "Notation de la région (par le client avec ville)",
+    "_AGE_YEARS": "Âge du client (années)",
+    "_EMPLOYED_YEARS": "Ancienneté d'emploi (années)"
+}
+
+st.set_page_config(
+    page_title="Prêt à dépenser : Outil de Scoring Crédit",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+API_URL = "https://ilkan77-openclassroom.hf.space/predict"
+
+
+@st.cache_data
+def load_full_data(file_path):
+    try:
+        df = pd.read_csv(file_path)
+        if 'TARGET' in df.columns:
+            df = df.drop(columns=['TARGET'])
+
+        df["_AGE_YEARS"] = np.abs(df["DAYS_BIRTH"]) / 365.25
+        df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
+
+        # Créez _EMPLOYED_YEARS_CAT avec des chaînes de caractères dès le début
+        # cela évite le mélange initial float64 + str qui génère le FutureWarning
+        df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].apply(
+            lambda x: f"{round(x)} ans" if pd.notna(x) else "Inconnu").astype(str)
+        df.loc[df["DAYS_EMPLOYED"] == 365243, '_EMPLOYED_YEARS_CAT'] = "Non-employé"
+        df['_EMPLOYED_YEARS_CAT'] = df['_EMPLOYED_YEARS_CAT'].astype('category')
+
+        return df
+    except FileNotFoundError:
+        st.error(f"Fichier '{file_path}' non trouvé.")
+        return pd.DataFrame()
+
+
+df_full = load_full_data("application_train.csv")
+
+relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys()) + ['_EMPLOYED_YEARS_CAT']
+df_ref = df_full[df_full.columns.intersection(relevant_cols_for_sample)].sample(
+    min(1000, len(df_full)), random_state=42)
+
+st.title("📊 Prêt à dépenser : Outil de Scoring Crédit pour les Chargés de Clientèle")
+st.markdown(
+    "Bienvenue sur le dashboard interactif d'aide à la décision d'octroi de crédit. Cet outil vous permet de visualiser le score de crédit d'un client, sa probabilité de défaut, et les facteurs qui ont influencé cette décision. Vous pouvez également comparer le profil du client avec l'ensemble de la base.")
+
+st.sidebar.header("👤 Informations Client Actuel")
+st.sidebar.markdown(
+    "Saisissez un ID client pour pré-remplir les champs, ou entrez les informations manuellement.")
+
+client_id_input = st.sidebar.number_input("ID Client (Ex: 100002)", min_value=0, value=0, step=1)
+load_client_data_button = st.sidebar.button("Charger données client par ID")
+
+if 'client_data_form_values' not in st.session_state:
+    st.session_state.client_data_form_values = {
+        "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
+        "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
+        "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0, "DAYS_ID_PUBLISH": -1000,
+        "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0, "DAYS_EMPLOYED": -2000,
+        "CODE_GENDER": "M", "NAME_EDUCATION_TYPE": "Secondary / secondary special",
+        "NAME_FAMILY_STATUS": "Married", "AMT_INCOME_TOTAL": 150000.0,
+        "CNT_CHILDREN": 0, "FLAG_OWN_CAR": "N", "FLAG_OWN_REALTY": "Y",
+        "OCCUPATION_TYPE": "Laborers", "REGION_POPULATION_RELATIVE": 0.018801,
+        "HOUR_APPR_PROCESS_START": 12,
+    }
+
+if load_client_data_button and client_id_input != 0:
+    client_row = df_full[df_full['SK_ID_CURR'] == client_id_input]
+    if not client_row.empty:
+        st.sidebar.success(f"Données pour l'ID {client_id_input} chargées.")
+        client_data = client_row.iloc[0].to_dict()
+
+        for feature, value in client_data.items():
+            # Initialiser final_value à None. Il sera mis à jour si une valeur scalaire valide est trouvée.
+            final_value = None
+
+            # Vérifier si la valeur est une série Pandas (Index est aussi une sorte de série)
+            if isinstance(value, (pd.Series, pd.Index)):
+                # Si c'est une série d'un seul élément, extraire l'élément scalaire
+                if not value.empty and len(value) == 1:
+                    final_value = value.iloc[0] if isinstance(value, pd.Series) else value[0]
+                else:
+                    st.warning(f"La caractéristique '{feature}' contient une série non scalaire (vide ou multi-valeurs). Une valeur par défaut sera utilisée si possible.")
+                    if feature in df_full.columns:
+                        if pd.api.types.is_numeric_dtype(df_full[feature]):
+                            final_value = 0.0
+                        elif pd.api.types.is_string_dtype(df_full[feature]) or pd.api.types.is_categorical_dtype(df_full[feature]):
+                            final_value = "Non spécifié"
+                        else:
+                            final_value = None
+            # Gérer les NaN pour les types numériques et non-numériques
+            elif pd.isna(value):
+                if feature in df_full.columns:
+                    if pd.api.types.is_numeric_dtype(df_full[feature]):
+                        final_value = 0.0
+                    elif pd.api.types.is_string_dtype(df_full[feature]) or pd.api.types.is_categorical_dtype(df_full[feature]):
+                        final_value = "Non spécifié"
+                    else:
+                        final_value = None
+                else: # Feature not in original df_full, fallback to a generic default
+                    final_value = 0.0 if isinstance(value, (int, float)) else "Unknown" # Generic default if type cannot be inferred from df_full
+            else:
+                # La valeur est déjà un scalaire, l'assigner directement
+                final_value = value
+
+            if final_value is not None:
+                st.session_state.client_data_form_values[feature] = final_value
+                st.write(f"DEBUG: {feature} stored in session_state: {st.session_state.client_data_form_values.get(feature)} (type: {type(st.session_state.client_data_form_values.get(feature))})")
+    else:
+        st.sidebar.warning(f"ID Client {client_id_input} non trouvé.")
+        # Réinitialiser aux valeurs par défaut si l'ID n'est pas trouvé
+        st.session_state.client_data_form_values = {
+            "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
+            "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
+            "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0, "DAYS_ID_PUBLISH": -1000,
+            "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0, "DAYS_EMPLOYED": -2000,
+            "CODE_GENDER": "M", "NAME_EDUCATION_TYPE": "Secondary / secondary special",
+            "NAME_FAMILY_STATUS": "Married", "AMT_INCOME_TOTAL": 150000.0,
+            "CNT_CHILDREN": 0, "FLAG_OWN_CAR": "N", "FLAG_OWN_REALTY": "Y",
+            "OCCUPATION_TYPE": "Laborers", "REGION_POPULATION_RELATIVE": 0.018801,
+            "HOUR_APPR_PROCESS_START": 12,
+        }
+
+with st.sidebar.form("client_data_form"):
+    st.markdown("### Champs essentiels pour le calcul du score:")
+
+    EXT_SOURCE_1 = st.number_input(
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1", 0.5)),
+        format="%.6f",
+        min_value=0.0, max_value=1.0)
+    EXT_SOURCE_3 = st.number_input(
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3", 0.5)),
+        format="%.6f",
+        min_value=0.0, max_value=1.0)
+    AMT_CREDIT = st.number_input(
+        FEATURE_DESCRIPTIONS.get("AMT_CREDIT"),
+        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT", 250000.0)),
+        min_value=0.0,
+        max_value=5000000.0)
+
+    days_birth_val = st.session_state.client_data_form_values.get("DAYS_BIRTH")
+    days_birth_input = st.number_input("Âge du client (en jours, ex: -15000)", value=int(
+        days_birth_val) if days_birth_val is not None else -15000, min_value=-30000,
+                                       max_value=-7000)
+    st.info(f"Soit environ {round(abs(days_birth_input) / 365.25)} ans.")
+    DAYS_BIRTH = days_birth_input
+
+    EXT_SOURCE_2 = st.number_input(
+        FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2"),
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_2", 0.5)),
+        format="%.6f",
+        min_value=0.0, max_value=1.0)
+    AMT_ANNUITY = st.number_input(
+        FEATURE_DESCRIPTIONS.get("AMT_ANNUITY"),
+        value=float(st.session_state.client_data_form_values.get("AMT_ANNUITY", 25000.0)),
+        min_value=0.0,
+        max_value=200000.0)
+    SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean = st.number_input(
+        FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean"),
+        value=float(
+            st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean",
+                                                         0.0)),
+        min_value=0.0, max_value=100.0)
+
+    days_id_publish_val = st.session_state.client_data_form_values.get("DAYS_ID_PUBLISH")
+    days_id_publish_input = st.number_input("Ancienneté mise à jour ID (en jours, ex: -1000)",
+                                            value=int(
+                                                days_id_publish_val) if days_id_publish_val is not None else -1000,
+                                            min_value=-10000, max_value=-1)
+    st.info(f"Soit environ {round(abs(days_id_publish_input) / 365.25)} ans.")
+    DAYS_ID_PUBLISH = days_id_publish_input
+
+    sk_id_curr_days_credit_enddate_max_val = st.session_state.client_data_form_values.get(
+        "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max")
+    sk_id_curr_days_credit_enddate_max_input = st.number_input(
+        "Date fin max crédits passés (en jours, ex: 0.0)", value=float(
+            sk_id_curr_days_credit_enddate_max_val) if sk_id_curr_days_credit_enddate_max_val is not None else 0.0,
+        min_value=-10000.0, max_value=10000.0)
+    if sk_id_curr_days_credit_enddate_max_input < 0:
+        st.info(
+            f"Date de fin du crédit le plus récent : il y a environ {round(abs(sk_id_curr_days_credit_enddate_max_input) / 365.25)} ans.")
+    elif sk_id_curr_days_credit_enddate_max_input > 0:
+        st.info(
+            f"Date de fin du crédit le plus récent : dans environ {round(abs(sk_id_curr_days_credit_enddate_max_input) / 365.25)} ans.")
+    else:
+        st.info("Date de fin du crédit le plus récent : aujourd'hui.")
+    SK_ID_CURR_DAYS_CREDIT_ENDDATE_max = sk_id_curr_days_credit_enddate_max_input
+
+    days_employed_val = st.session_state.client_data_form_values.get("DAYS_EMPLOYED")
+    days_employed_input = st.number_input("Ancienneté d'emploi (en jours, ex: -2000 ou 365243)",
+                                          value=int(
+                                              days_employed_val) if days_employed_val is not None else -2000,
+                                          min_value=-20000, max_value=365243)
+    if days_employed_input == 365243:
+        st.info("Client actuellement non-employé.")
+    elif days_employed_input < 0:
+        st.info(f"Ancienneté d'emploi : environ {round(abs(days_employed_input) / 365.25)} ans.")
+    else:
+        st.info("Valeur d'ancienneté d'emploi non standard (positive).")
+    DAYS_EMPLOYED = days_employed_input
+
+    st.markdown("### Autres informations descriptives (pour le profil client):")
+    CODE_GENDER_options = ["M", "F", "XNA"]
+    CODE_GENDER = st.selectbox(FEATURE_DESCRIPTIONS.get("CODE_GENDER"), CODE_GENDER_options,
+                               index=CODE_GENDER_options.index(
+                                   st.session_state.client_data_form_values.get("CODE_GENDER",
+                                                                                "M")))
+    NAME_EDUCATION_TYPE_options = ["Secondary / secondary special", "Higher education",
+                                   "Incomplete higher",
+                                   "Lower secondary", "Academic degree"]
+    NAME_EDUCATION_TYPE = st.selectbox(
+        FEATURE_DESCRIPTIONS.get("NAME_EDUCATION_TYPE"), NAME_EDUCATION_TYPE_options,
+        index=NAME_EDUCATION_TYPE_options.index(
+            st.session_state.client_data_form_values.get("NAME_EDUCATION_TYPE",
+                                                         "Secondary / secondary special")))
+    NAME_FAMILY_STATUS_options = ["Married", "Single / not married", "Civil marriage", "Separated",
+                                  "Widow"]
+    NAME_FAMILY_STATUS = st.selectbox(
+        FEATURE_DESCRIPTIONS.get("NAME_FAMILY_STATUS"), NAME_FAMILY_STATUS_options,
+        index=NAME_FAMILY_STATUS_options.index(
+            st.session_state.client_data_form_values.get("NAME_FAMILY_STATUS", "Married")))
+    AMT_INCOME_TOTAL = st.number_input(
+        FEATURE_DESCRIPTIONS.get("AMT_INCOME_TOTAL"),
+        value=float(st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL", 150000.0)),
+        min_value=0.0,
+        max_value=5000000.0)
+    CNT_CHILDREN = st.number_input(FEATURE_DESCRIPTIONS.get("CNT_CHILDREN"),
+                                   value=int(
+                                       st.session_state.client_data_form_values.get("CNT_CHILDREN",
+                                                                                    0)),
+                                   min_value=0, max_value=20, step=1)
+    FLAG_OWN_CAR = st.radio(FEATURE_DESCRIPTIONS.get("FLAG_OWN_CAR"), ["Y", "N"],
+                            index=["Y", "N"].index(
+                                st.session_state.client_data_form_values.get("FLAG_OWN_CAR", "N")),
+                            horizontal=True)
+    FLAG_OWN_REALTY = st.radio(
+        FEATURE_DESCRIPTIONS.get("FLAG_OWN_REALTY"), ["Y", "N"],
+        index=["Y", "N"].index(
+            st.session_state.client_data_form_values.get("FLAG_OWN_REALTY", "Y")), horizontal=True)
+    OCCUPATION_TYPE_options = [
+        "Laborers", "Core staff", "Accountants", "Managers", "Drivers", "Sales staff",
+        "Cleaning staff", "Cooking staff", "Private service staff", "Medicine staff",
+        "Security staff", "High skill tech staff", "Waiters/barmen staff", "Low-skill Laborers",
+        "Realty agents", "Secretaries", "IT staff", "HR staff", "nan"
+    ]
+    OCCUPATION_TYPE = st.selectbox(FEATURE_DESCRIPTIONS.get("OCCUPATION_TYPE"),
+                                   OCCUPATION_TYPE_options,
+                                   index=OCCUPATION_TYPE_options.index(
+                                       st.session_state.client_data_form_values.get(
+                                           "OCCUPATION_TYPE", "Laborers")))
+    REGION_POPULATION_RELATIVE = st.number_input(
+        FEATURE_DESCRIPTIONS.get("REGION_POPULATION_RELATIVE"),
+        value=float(
+            st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE", 0.018801)),
+        format="%.6f", min_value=0.0, max_value=1.0)
+    HOUR_APPR_PROCESS_START = st.number_input(
+        FEATURE_DESCRIPTIONS.get("HOUR_APPR_PROCESS_START"),
+        value=int(st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START", 12)),
+        min_value=0,
+        max_value=23, step=1)
+
+    submitted = st.form_submit_button("Calculer et Expliquer le Score")
+
+import streamlit as st
+import requests
+import json
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+import shap
 import traceback # Importer le module traceback
 
 # ... (le reste de votre code) ...
@@ -332,6 +827,17 @@ if submitted:
         st.error(f"🔥 Une erreur inattendue est survenue : {e}")
         st.exception(e)
         st.code(traceback.format_exc())
+
+st.sidebar.markdown("---")
+st.sidebar.header("Accessibilité (WCAG)")
+st.sidebar.markdown("""
+Ce dashboard prend en compte certains critères d'accessibilité :
+* **Critère 1.1.1 Contenu non textuel :** Les graphiques Plotly génèrent des images SVG qui peuvent inclure des balises `<title>` et `<desc>` pour les lecteurs d'écran (support partiel par défaut de Plotly, améliorations possibles via des attributs alt-text si Streamlit le permet directement sur les graphiques).
+* **Critère 1.4.1 Utilisation de la couleur :** Les informations ne sont pas transmises *uniquement* par la couleur (ex: seuil visible avec une ligne pointillée sur la jauge). Les palettes de couleurs sont choisies pour une meilleure différenciation.
+* **Critère 1.4.3 Contraste (minimum) :** Les couleurs de texte et d'arrière-plan de Streamlit sont généralement conformes. Pour les graphiques, des palettes de couleurs contrastées sont utilisées (e.g., `px.colors.diverging.RdBu`).
+* **Critère 1.4.4 Redimensionnement du texte :** Streamlit permet le redimensionnement du texte via les fonctions de zoom du navigateur.
+* **Critère 2.4.2 Titre de page :** Le titre de la page est défini (`st.set_page_config`).
+""")
 
 st.sidebar.markdown("---")
 st.sidebar.header("Accessibilité (WCAG)")
