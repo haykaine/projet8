@@ -631,6 +631,9 @@ if submitted:
                 else:
                     display_df.loc[idx, 'Valeur'] = "Aujourd'hui"
 
+        display_df['Valeur'] = display_df['Valeur'].astype(
+            str)
+
         st.dataframe(
             display_df.style.set_properties(**{'background-color': '#f0f2f6', 'color': 'black'}),
             use_container_width=True)
