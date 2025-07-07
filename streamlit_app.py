@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 import shap
 
-# --- Dictionnaire de traduction des noms de variables (intégré) ---
 FEATURE_DESCRIPTIONS = {
     "EXT_SOURCE_1": "Score Source Externe 1 (information financière externe)",
     "EXT_SOURCE_3": "Score Source Externe 3 (information financière externe)",
@@ -19,7 +18,6 @@ FEATURE_DESCRIPTIONS = {
     "DAYS_ID_PUBLISH": "Ancienneté de la dernière mise à jour de l'ID (en jours, négatif)",
     "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": "Date de fin maximale des crédits passés (en jours)",
     "DAYS_EMPLOYED": "Ancienneté d'emploi actuelle (en jours, négatif, 365243 si non employé)",
-
     "CODE_GENDER": "Genre",
     "NAME_EDUCATION_TYPE": "Niveau d'éducation",
     "NAME_FAMILY_STATUS": "Statut familial",
@@ -30,7 +28,6 @@ FEATURE_DESCRIPTIONS = {
     "OCCUPATION_TYPE": "Type d'emploi",
     "REGION_POPULATION_RELATIVE": "Densité de population de la région de résidence",
     "HOUR_APPR_PROCESS_START": "Heure de début de la demande",
-
     "SK_ID_CURR_AMT_GOODS_PRICE_mean": "Moyenne du prix des biens des anciens crédits",
     "SK_ID_CURR_AMT_PAYMENT_CURRENT_mean": "Moyenne des paiements actuels des crédits",
     "SK_ID_CURR_AMT_INSTALMENT_mean": "Moyenne des montants d'échéances des anciens crédits",
@@ -57,7 +54,6 @@ FEATURE_DESCRIPTIONS = {
     "SK_ID_CURR_CNT_DRAWINGS_ATM_CURRENT_max": "Maximum des retraits ATM actuels",
     "SK_ID_CURR_MONTHS_BALANCE_min_y": "Mois minimal de l'historique de solde (POS/Cash)",
     "SK_ID_CURR_DPD_sum_y": "Somme des jours d'arriérés (POS/Cash)",
-
     "SK_ID_CURR_NAME_GOODS_CATEGORY_Medicine_mean": "Moyenne des prêts pour Médicaments",
     "SK_ID_CURR_NAME_TYPE_SUITE_Spouse_partner_mean": "Moyenne des clients accompagnés par conjoint/partenaire",
     "SK_ID_CURR_CHANNEL_TYPE_Stone_mean": "Moyenne des demandes via canal 'Stone'",
@@ -70,7 +66,6 @@ FEATURE_DESCRIPTIONS = {
     "SK_ID_CURR_CREDIT_TYPE_Car_loan_mean": "Moyenne des prêts automobiles",
     "SK_ID_CURR_NAME_CONTRACT_STATUS_Canceled_mean_x": "Moyenne des contrats annulés (bureau)",
     "SK_ID_CURR_CNT_DRAWINGS_CURRENT_mean": "Moyenne des retraits actuels",
-
     "SK_ID_CURR_CHANNEL_TYPE_Channel_of_corporate_sales_mean": "Moyenne des demandes via canal de ventes corporate",
     "SK_ID_CURR_NAME_GOODS_CATEGORY_House_Construction_mean": "Moyenne des prêts pour Construction de maison",
     "SK_ID_CURR_CREDIT_TYPE_Mortgage_mean": "Moyenne des prêts hypothécaires",
@@ -221,7 +216,6 @@ FEATURE_DESCRIPTIONS = {
     "SK_ID_CURR_NAME_SELLER_INDUSTRY_Consumer_electronics_mean": "Moyenne des demandes via industrie 'Électronique grand public'",
     "SK_ID_CURR_AMT_CREDIT_mean": "Moyenne du montant du crédit des anciens crédits",
     "SK_ID_CURR_AMT_DRAWINGS_CURRENT_mean": "Moyenne des retraits actuels",
-
     "NAME_CONTRACT_TYPE": "Type de contrat",
     "NAME_TYPE_SUITE": "Type d'accompagnement de la demande",
     "NAME_INCOME_TYPE": "Type de revenu",
@@ -234,58 +228,53 @@ FEATURE_DESCRIPTIONS = {
     "EMERGENCYSTATE_MODE": "État d'urgence du bâtiment",
     "REGION_RATING_CLIENT": "Notation de la région (par le client)",
     "REGION_RATING_CLIENT_W_CITY": "Notation de la région (par le client avec ville)",
-
     "_AGE_YEARS": "Âge du client (années)",
     "_EMPLOYED_YEARS": "Ancienneté d'emploi (années)"
 }
 
-# --- Configuration de la page Streamlit ---
 st.set_page_config(
     page_title="Prêt à dépenser : Outil de Scoring Crédit",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- URL de l'API ---
 API_URL = "https://ilkan77-openclassroom.hf.space/predict"
 
 
-# --- Chargement des données d'exemple pour les comparaisons et le pré-remplissage ---
 @st.cache_data
 def load_full_data(file_path):
     try:
         df = pd.read_csv(file_path)
-        # Supprimer la colonne TARGET si elle existe pour la prédiction
         if 'TARGET' in df.columns:
             df = df.drop(columns=['TARGET'])
 
-        # --- Pré-traitement pour les graphiques de comparaison ---
         df["_AGE_YEARS"] = np.abs(df["DAYS_BIRTH"]) / 365.25
-
         df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
 
-        df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].astype(str)  # Convertir en string d'abord
+        # Créez _EMPLOYED_YEARS_CAT avec des chaînes de caractères dès le début
+        # Cela évite le mélange initial float64 + str qui génère le FutureWarning
+        df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].apply(
+            lambda x: f"{round(x)} ans" if pd.notna(x) else np.nan).astype(str)
         df.loc[df["DAYS_EMPLOYED"] == 365243, '_EMPLOYED_YEARS_CAT'] = "Non-employé"
-        df['_EMPLOYED_YEARS_CAT'] = df['_EMPLOYED_YEARS_CAT'].astype(
-            'category')
+        df['_EMPLOYED_YEARS_CAT'] = df['_EMPLOYED_YEARS_CAT'].astype('category')
 
+        st.write("DEBUG: df_full head after load_full_data")
+        st.write(df.head())
+        st.write("DEBUG: df_full dtypes after load_full_data")
+        st.write(df.dtypes)
         return df
     except FileNotFoundError:
-        st.error(
-            f"Fichier '{file_path}' non trouvé. Assurez-vous qu'il est dans le même répertoire que l'application Streamlit.")
-        return pd.DataFrame()  # Retourne un DataFrame vide en cas d'erreur
+        st.error(f"Fichier '{file_path}' non trouvé.")
+        return pd.DataFrame()
 
 
-# Charger le DataFrame complet
-df_full = load_full_data("application_train.csv")  # Assurez-vous que c'est le bon nom de fichier
+df_full = load_full_data("application_train.csv")
 
 relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys()) + ['_EMPLOYED_YEARS_CAT']
 df_ref = df_full[df_full.columns.intersection(relevant_cols_for_sample)].sample(
     min(1000, len(df_full)), random_state=42)
 
-# --- Titre de l'application ---
 st.title("📊 Prêt à dépenser : Outil de Scoring Crédit pour les Chargés de Clientèle")
-
 st.markdown("""
 Bienvenue sur le dashboard interactif d'aide à la décision d'octroi de crédit.
 Cet outil vous permet de visualiser le score de crédit d'un client,
@@ -293,43 +282,27 @@ sa probabilité de défaut, et les facteurs qui ont influencé cette décision.
 Vous pouvez également comparer le profil du client avec l'ensemble de la base.
 """)
 
-# --- Sidebar pour les informations client ---
 st.sidebar.header("👤 Informations Client Actuel")
 st.sidebar.markdown(
     "Saisissez un ID client pour pré-remplir les champs, ou entrez les informations manuellement.")
 
-# Champ pour l'ID client
 client_id_input = st.sidebar.number_input("ID Client (Ex: 100002)", min_value=0, value=0, step=1,
                                           help="Saisissez l'ID d'un client existant pour charger ses données.")
 load_client_data_button = st.sidebar.button("Charger données client par ID")
 
-# Initialisation des valeurs par défaut des champs du formulaire
-# Utilisation de st.session_state pour persister les valeurs des champs
 if 'client_data_form_values' not in st.session_state:
     st.session_state.client_data_form_values = {
-        "EXT_SOURCE_1": 0.5,
-        "EXT_SOURCE_3": 0.5,
-        "AMT_CREDIT": 250000.0,
-        "DAYS_BIRTH": -15000,
-        "EXT_SOURCE_2": 0.5,
-        "AMT_ANNUITY": 25000.0,
-        "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0,
-        "DAYS_ID_PUBLISH": -1000,
-        "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0,
-        "DAYS_EMPLOYED": -2000,
-        "CODE_GENDER": "M",
-        "NAME_EDUCATION_TYPE": "Secondary / secondary special",
-        "NAME_FAMILY_STATUS": "Married",
-        "AMT_INCOME_TOTAL": 150000.0,
-        "CNT_CHILDREN": 0,
-        "FLAG_OWN_CAR": "N",
-        "FLAG_OWN_REALTY": "Y",
-        "OCCUPATION_TYPE": "Laborers",
-        "REGION_POPULATION_RELATIVE": 0.018801,
+        "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
+        "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
+        "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0, "DAYS_ID_PUBLISH": -1000,
+        "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0, "DAYS_EMPLOYED": -2000,
+        "CODE_GENDER": "M", "NAME_EDUCATION_TYPE": "Secondary / secondary special",
+        "NAME_FAMILY_STATUS": "Married", "AMT_INCOME_TOTAL": 150000.0,
+        "CNT_CHILDREN": 0, "FLAG_OWN_CAR": "N", "FLAG_OWN_REALTY": "Y",
+        "OCCUPATION_TYPE": "Laborers", "REGION_POPULATION_RELATIVE": 0.018801,
         "HOUR_APPR_PROCESS_START": 12,
     }
 
-# Logique pour ajouter un client par ID
 if load_client_data_button and client_id_input != 0:
     client_row = df_full[df_full['SK_ID_CURR'] == client_id_input]
     if not client_row.empty:
@@ -338,41 +311,53 @@ if load_client_data_button and client_id_input != 0:
 
         for feature, value in client_data.items():
             if feature in st.session_state.client_data_form_values:
+                st.write(
+                    f"DEBUG: Traitement de la feature {feature} avec la valeur {value} (type: {type(value)})")
                 if pd.isna(value):
-                    # Gardez le numérique pour les types numériques, ou utilisez une chaîne par défaut pour les catégoriques
                     if pd.api.types.is_numeric_dtype(df_full[feature]):
-                        st.session_state.client_data_form_values[
-                            feature] = 0.0
+                        st.session_state.client_data_form_values[feature] = 0.0
                     else:
                         st.session_state.client_data_form_values[feature] = "XNA" if feature in [
-                            "CODE_GENDER",
-                            "OCCUPATION_TYPE"] else "Unknown"
+                            "CODE_GENDER", "OCCUPATION_TYPE"] else "Unknown"
+                else:
+                    if isinstance(value, (pd.Series, pd.Index)):
+                        st.write(
+                            f"ERROR: Found non-scalar value for {feature}: {value} (type: {type(value)})")
+                        # Tentative de récupérer le premier élément si c'est un Series/Index avec un seul élément
+                        if len(value) == 1:
+                            st.session_state.client_data_form_values[feature] = value.iloc[
+                                0] if isinstance(value, pd.Series) else value[0]
+                        else:
+                            # Fallback to default or raise an error if multiple values are found
+                            st.session_state.client_data_form_values[
+                                feature] = 0.0 if pd.api.types.is_numeric_dtype(
+                                df_full[feature]) else "Unknown"
+                    else:
+                        st.session_state.client_data_form_values[feature] = value
+            elif feature not in st.session_state.client_data_form_values and feature != 'SK_ID_CURR':
+                st.write(
+                    f"DEBUG: Ajout de la feature {feature} (non présente initialement) avec la valeur {value} (type: {type(value)})")
+                if isinstance(value, (pd.Series, pd.Index)):
+                    if len(value) == 1:
+                        st.session_state.client_data_form_values[feature] = value.iloc[
+                            0] if isinstance(value, pd.Series) else value[0]
+                    else:
+                        st.session_state.client_data_form_values[
+                            feature] = 0.0 if pd.api.types.is_numeric_dtype(
+                            df_full[feature]) else "Unknown"
                 else:
                     st.session_state.client_data_form_values[feature] = value
-            elif feature not in st.session_state.client_data_form_values and feature != 'SK_ID_CURR':
-                st.session_state.client_data_form_values[feature] = value
     else:
-        st.sidebar.warning(f"ID Client {client_id_input} non trouvé dans la base de données.")
+        st.sidebar.warning(f"ID Client {client_id_input} non trouvé.")
         st.session_state.client_data_form_values = {
-            "EXT_SOURCE_1": 0.5,
-            "EXT_SOURCE_3": 0.5,
-            "AMT_CREDIT": 250000.0,
-            "DAYS_BIRTH": -15000,
-            "EXT_SOURCE_2": 0.5,
-            "AMT_ANNUITY": 25000.0,
-            "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0,
-            "DAYS_ID_PUBLISH": -1000,
-            "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0,
-            "DAYS_EMPLOYED": -2000,
-            "CODE_GENDER": "M",
-            "NAME_EDUCATION_TYPE": "Secondary / secondary special",
-            "NAME_FAMILY_STATUS": "Married",
-            "AMT_INCOME_TOTAL": 150000.0,
-            "CNT_CHILDREN": 0,
-            "FLAG_OWN_CAR": "N",
-            "FLAG_OWN_REALTY": "Y",
-            "OCCUPATION_TYPE": "Laborers",
-            "REGION_POPULATION_RELATIVE": 0.018801,
+            "EXT_SOURCE_1": 0.5, "EXT_SOURCE_3": 0.5, "AMT_CREDIT": 250000.0,
+            "DAYS_BIRTH": -15000, "EXT_SOURCE_2": 0.5, "AMT_ANNUITY": 25000.0,
+            "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": 0.0, "DAYS_ID_PUBLISH": -1000,
+            "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": 0.0, "DAYS_EMPLOYED": -2000,
+            "CODE_GENDER": "M", "NAME_EDUCATION_TYPE": "Secondary / secondary special",
+            "NAME_FAMILY_STATUS": "Married", "AMT_INCOME_TOTAL": 150000.0,
+            "CNT_CHILDREN": 0, "FLAG_OWN_CAR": "N", "FLAG_OWN_REALTY": "Y",
+            "OCCUPATION_TYPE": "Laborers", "REGION_POPULATION_RELATIVE": 0.018801,
             "HOUR_APPR_PROCESS_START": 12,
         }
 
@@ -382,47 +367,43 @@ with st.sidebar.form("client_data_form"):
     EXT_SOURCE_1 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1", "Score Source Externe 1"),
         value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1")), format="%.6f",
-        min_value=0.0, max_value=1.0,
-        help="Score normalisé d'une source de données externe (plus élevé = meilleur).")
+        min_value=0.0, max_value=1.0)
     EXT_SOURCE_3 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"),
         value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3")), format="%.6f",
-        min_value=0.0, max_value=1.0, help="Score normalisé d'une autre source externe.")
+        min_value=0.0, max_value=1.0)
     AMT_CREDIT = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_CREDIT", "Montant du crédit demandé"),
         value=float(st.session_state.client_data_form_values.get("AMT_CREDIT")), min_value=0.0,
-        max_value=5000000.0, help="Montant total du crédit demandé par le client.")
+        max_value=5000000.0)
 
     days_birth_val = st.session_state.client_data_form_values.get("DAYS_BIRTH")
     days_birth_input = st.number_input("Âge du client (en jours, ex: -15000)", value=int(
         days_birth_val) if days_birth_val is not None else -15000, min_value=-30000,
-                                       max_value=-7000,
-                                       help="Âge du client au moment de la demande, en jours (valeurs négatives : nombre de jours depuis la naissance).")
+                                       max_value=-7000)
     st.info(f"Soit environ {round(abs(days_birth_input) / 365.25)} ans.")
     DAYS_BIRTH = days_birth_input
 
     EXT_SOURCE_2 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2", "Score Source Externe 2"),
         value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_2")), format="%.6f",
-        min_value=0.0, max_value=1.0, help="Score normalisé d'une troisième source externe.")
+        min_value=0.0, max_value=1.0)
     AMT_ANNUITY = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_ANNUITY", "Montant des annuités du prêt"),
         value=float(st.session_state.client_data_form_values.get("AMT_ANNUITY")), min_value=0.0,
-        max_value=200000.0, help="Montant de l'annuité du prêt (versements annuels).")
+        max_value=200000.0)
     SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean = st.number_input(
         FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean",
                                  "Moyenne des échéances futures impayées"),
         value=float(
             st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean")),
-        min_value=0.0, max_value=100.0,
-        help="Nombre moyen de versements futurs pour les crédits précédents du client.")
+        min_value=0.0, max_value=100.0)
 
     days_id_publish_val = st.session_state.client_data_form_values.get("DAYS_ID_PUBLISH")
     days_id_publish_input = st.number_input("Ancienneté mise à jour ID (en jours, ex: -1000)",
                                             value=int(
                                                 days_id_publish_val) if days_id_publish_val is not None else -1000,
-                                            min_value=-10000, max_value=-1,
-                                            help="Nombre de jours depuis la dernière publication/mise à jour de l'ID client (négatif).")
+                                            min_value=-10000, max_value=-1)
     st.info(f"Soit environ {round(abs(days_id_publish_input) / 365.25)} ans.")
     DAYS_ID_PUBLISH = days_id_publish_input
 
@@ -431,8 +412,7 @@ with st.sidebar.form("client_data_form"):
     sk_id_curr_days_credit_enddate_max_input = st.number_input(
         "Date fin max crédits passés (en jours, ex: 0.0)", value=float(
             sk_id_curr_days_credit_enddate_max_val) if sk_id_curr_days_credit_enddate_max_val is not None else 0.0,
-        min_value=-10000.0, max_value=10000.0,
-        help="Nombre maximal de jours entre la date actuelle et la date de fin prévue du crédit le plus récent du client (- = passé, + = futur).")
+        min_value=-10000.0, max_value=10000.0)
     if sk_id_curr_days_credit_enddate_max_input < 0:
         st.info(
             f"Date de fin du crédit le plus récent : il y a environ {round(abs(sk_id_curr_days_credit_enddate_max_input) / 365.25)} ans.")
@@ -447,8 +427,7 @@ with st.sidebar.form("client_data_form"):
     days_employed_input = st.number_input("Ancienneté d'emploi (en jours, ex: -2000 ou 365243)",
                                           value=int(
                                               days_employed_val) if days_employed_val is not None else -2000,
-                                          min_value=-20000, max_value=365243,
-                                          help="Nombre de jours depuis le début de l'emploi actuel (négatif). Utilisez 365243 si le client est non-employé.")
+                                          min_value=-20000, max_value=365243)
     if days_employed_input == 365243:
         st.info("Client actuellement non-employé.")
     elif days_employed_input < 0:
@@ -461,8 +440,7 @@ with st.sidebar.form("client_data_form"):
     CODE_GENDER = st.selectbox(FEATURE_DESCRIPTIONS.get("CODE_GENDER", "Genre"), ["M", "F", "XNA"],
                                index=["M", "F", "XNA"].index(
                                    st.session_state.client_data_form_values.get("CODE_GENDER",
-                                                                                "M")),
-                               help="Genre du client (M: Masculin, F: Féminin, XNA: Non spécifié).")
+                                                                                "M")))
     NAME_EDUCATION_TYPE = st.selectbox(
         FEATURE_DESCRIPTIONS.get("NAME_EDUCATION_TYPE", "Niveau d'éducation"),
         ["Secondary / secondary special", "Higher education", "Incomplete higher",
@@ -470,32 +448,27 @@ with st.sidebar.form("client_data_form"):
         index=["Secondary / secondary special", "Higher education", "Incomplete higher",
                "Lower secondary", "Academic degree"].index(
             st.session_state.client_data_form_values.get("NAME_EDUCATION_TYPE",
-                                                         "Secondary / secondary special")),
-        help="Plus haut niveau d'éducation atteint par le client.")
+                                                         "Secondary / secondary special")))
     NAME_FAMILY_STATUS = st.selectbox(
         FEATURE_DESCRIPTIONS.get("NAME_FAMILY_STATUS", "Statut familial"),
         ["Married", "Single / not married", "Civil marriage", "Separated", "Widow"],
         index=["Married", "Single / not married", "Civil marriage", "Separated", "Widow"].index(
-            st.session_state.client_data_form_values.get("NAME_FAMILY_STATUS", "Married")),
-        help="Statut marital du client.")
+            st.session_state.client_data_form_values.get("NAME_FAMILY_STATUS", "Married")))
     AMT_INCOME_TOTAL = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_INCOME_TOTAL", "Revenu annuel total"),
         value=float(st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL")),
         min_value=0.0,
-        max_value=5000000.0, help="Revenu total annuel du client.")
+        max_value=5000000.0)
     CNT_CHILDREN = st.number_input(FEATURE_DESCRIPTIONS.get("CNT_CHILDREN", "Nombre d'enfants"),
                                    value=int(st.session_state.client_data_form_values.get(
-                                       "CNT_CHILDREN")), min_value=0, max_value=20, step=1,
-                                   help="Nombre d'enfants à charge.")
+                                       "CNT_CHILDREN")), min_value=0, max_value=20, step=1)
     FLAG_OWN_CAR = st.radio(FEATURE_DESCRIPTIONS.get("FLAG_OWN_CAR", "Possède une voiture"),
                             ["Y", "N"], index=["Y", "N"].index(
-            st.session_state.client_data_form_values.get("FLAG_OWN_CAR", "N")), horizontal=True,
-                            help="Le client possède-t-il une voiture ?")
+            st.session_state.client_data_form_values.get("FLAG_OWN_CAR", "N")), horizontal=True)
     FLAG_OWN_REALTY = st.radio(
         FEATURE_DESCRIPTIONS.get("FLAG_OWN_REALTY", "Possède un bien immobilier"), ["Y", "N"],
         index=["Y", "N"].index(
-            st.session_state.client_data_form_values.get("FLAG_OWN_REALTY", "Y")), horizontal=True,
-        help="Le client possède-t-il un bien immobilier ?")
+            st.session_state.client_data_form_values.get("FLAG_OWN_REALTY", "Y")), horizontal=True)
     OCCUPATION_TYPE = st.selectbox(FEATURE_DESCRIPTIONS.get("OCCUPATION_TYPE", "Type d'emploi"), [
         "Laborers", "Core staff", "Accountants", "Managers", "Drivers", "Sales staff",
         "Cleaning staff", "Cooking staff", "Private service staff", "Medicine staff",
@@ -506,41 +479,31 @@ with st.sidebar.form("client_data_form"):
         "Cleaning staff", "Cooking staff", "Private service staff", "Medicine staff",
         "Security staff", "High skill tech staff", "Waiters/barmen staff", "Low-skill Laborers",
         "Realty agents", "Secretaries", "IT staff", "HR staff", "nan"
-    ].index(st.session_state.client_data_form_values.get("OCCUPATION_TYPE", "Laborers")),
-                                   help="Type d'emploi du client.")
+    ].index(st.session_state.client_data_form_values.get("OCCUPATION_TYPE", "Laborers")))
     REGION_POPULATION_RELATIVE = st.number_input(
         FEATURE_DESCRIPTIONS.get("REGION_POPULATION_RELATIVE",
                                  "Densité de population de la région"),
         value=float(st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE")),
-        format="%.6f", min_value=0.0, max_value=1.0,
-        help="Score normalisé de la population de la région de résidence (plus élevé = plus peuplé).")
+        format="%.6f", min_value=0.0, max_value=1.0)
     HOUR_APPR_PROCESS_START = st.number_input(
         FEATURE_DESCRIPTIONS.get("HOUR_APPR_PROCESS_START", "Heure de début de la demande"),
         value=int(st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START")),
         min_value=0,
-        max_value=23, step=1, help="Heure à laquelle la demande de prêt a commencé (format 24h).")
+        max_value=23, step=1)
 
     submitted = st.form_submit_button("Calculer et Expliquer le Score")
 
-# --- Affichage des résultats dans la zone principale ---
 if submitted:
     client_data_for_api = {
-        "EXT_SOURCE_1": EXT_SOURCE_1,
-        "EXT_SOURCE_3": EXT_SOURCE_3,
-        "AMT_CREDIT": AMT_CREDIT,
-        "DAYS_BIRTH": DAYS_BIRTH,
-        "EXT_SOURCE_2": EXT_SOURCE_2,
-        "AMT_ANNUITY": AMT_ANNUITY,
+        "EXT_SOURCE_1": EXT_SOURCE_1, "EXT_SOURCE_3": EXT_SOURCE_3, "AMT_CREDIT": AMT_CREDIT,
+        "DAYS_BIRTH": DAYS_BIRTH, "EXT_SOURCE_2": EXT_SOURCE_2, "AMT_ANNUITY": AMT_ANNUITY,
         "SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean": SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean,
         "DAYS_ID_PUBLISH": DAYS_ID_PUBLISH,
         "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max": SK_ID_CURR_DAYS_CREDIT_ENDDATE_max,
-        "DAYS_EMPLOYED": DAYS_EMPLOYED,
-        "CODE_GENDER": CODE_GENDER,
+        "DAYS_EMPLOYED": DAYS_EMPLOYED, "CODE_GENDER": CODE_GENDER,
         "NAME_EDUCATION_TYPE": NAME_EDUCATION_TYPE,
-        "NAME_FAMILY_STATUS": NAME_FAMILY_STATUS,
-        "AMT_INCOME_TOTAL": AMT_INCOME_TOTAL,
-        "CNT_CHILDREN": CNT_CHILDREN,
-        "FLAG_OWN_CAR": FLAG_OWN_CAR,
+        "NAME_FAMILY_STATUS": NAME_FAMILY_STATUS, "AMT_INCOME_TOTAL": AMT_INCOME_TOTAL,
+        "CNT_CHILDREN": CNT_CHILDREN, "FLAG_OWN_CAR": FLAG_OWN_CAR,
         "FLAG_OWN_REALTY": FLAG_OWN_REALTY,
         "OCCUPATION_TYPE": OCCUPATION_TYPE,
         "REGION_POPULATION_RELATIVE": REGION_POPULATION_RELATIVE,
@@ -558,7 +521,6 @@ if submitted:
     try:
         response = requests.post(API_URL, json=client_data_for_api)
         response.raise_for_status()
-
         result = response.json()
 
         prob_default = result.get("probability_default")
@@ -569,33 +531,24 @@ if submitted:
 
         st.success("Calcul terminé!")
 
-        # --- Affichage du Score et de la Probabilité ---
         st.subheader("📈 Score de Crédit et Décision")
-
         col1, col2 = st.columns(2)
 
         with col1:
             st.metric(label="Probabilité de Défaut", value=f"{prob_default:.2%}")
             if prob_default is not None:
                 fig_gauge = go.Figure(go.Indicator(
-                    mode="gauge+number+delta",
-                    value=prob_default * 100,
+                    mode="gauge+number+delta", value=prob_default * 100,
                     domain={'x': [0, 1], 'y': [0, 1]},
                     title={'text': "Probabilité de défaut du client"},
-                    gauge={
-                        'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                        'bar': {'color': "darkblue"},
-                        'steps': [
-                            {'range': [0, optimal_threshold_used * 100], 'color': "lightgreen"},
-                            {'range': [optimal_threshold_used * 100, 100], 'color': "lightcoral"}
-                        ],
-                        'threshold': {
-                            'line': {'color': "red", 'width': 4},
-                            'thickness': 0.75,
-                            'value': optimal_threshold_used * 100
-                        }
-                    }
-                ))
+                    gauge={'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
+                           'bar': {'color': "darkblue"},
+                           'steps': [
+                               {'range': [0, optimal_threshold_used * 100], 'color': "lightgreen"},
+                               {'range': [optimal_threshold_used * 100, 100],
+                                'color': "lightcoral"}],
+                           'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75,
+                                         'value': optimal_threshold_used * 100}}))
                 fig_gauge.update_layout(height=250, margin=dict(l=10, r=10, t=50, b=10))
                 st.plotly_chart(fig_gauge, use_container_width=True,
                                 config={'displayModeBar': False})
@@ -615,29 +568,20 @@ if submitted:
                 shap_df = pd.DataFrame(shap_values_raw.items(), columns=['feature', 'shap_value'])
                 shap_df['abs_shap_value'] = np.abs(shap_df['shap_value'])
                 shap_df = shap_df.sort_values(by='abs_shap_value', ascending=False).head(10)
-
                 shap_df['feature_display_name'] = shap_df['feature'].map(
                     FEATURE_DESCRIPTIONS).fillna(shap_df['feature'])
 
                 fig_shap = px.bar(
-                    shap_df,
-                    x='shap_value',
-                    y='feature_display_name',
-                    orientation='h',
+                    shap_df, x='shap_value', y='feature_display_name', orientation='h',
                     title='Top 10 des facteurs influençant la décision pour ce client',
                     labels={'shap_value': 'Impact sur la probabilité de défaut (valeur SHAP)',
                             'feature_display_name': 'Caractéristique'},
-                    color='shap_value',
-                    color_continuous_scale=px.colors.diverging.RdBu,
-                    hover_data={'shap_value': ':.4f'}
-                )
+                    color='shap_value', color_continuous_scale=px.colors.diverging.RdBu,
+                    hover_data={'shap_value': ':.4f'})
                 fig_shap.update_layout(
                     xaxis_title="Impact sur la probabilité de défaut (valeur SHAP)",
                     yaxis_title="Caractéristique",
-                    height=400,
-                    showlegend=False,
-                    yaxis={'categoryorder': 'total ascending'}
-                )
+                    height=400, showlegend=False, yaxis={'categoryorder': 'total ascending'})
                 st.plotly_chart(fig_shap, use_container_width=True)
 
                 st.markdown("""
@@ -647,15 +591,13 @@ if submitted:
                 """)
             else:
                 st.warning(
-                    "Impossible de calculer les contributions individuelles des features (SHAP values). Cela peut être dû à un problème avec l'initialisation de l'explainer SHAP dans l'API.")
+                    "Impossible de calculer les contributions individuelles des features (SHAP values).")
 
-        # --- Informations descriptives du client ---
         st.subheader("📑 Informations Descriptives Détaillées du Client")
 
         client_info_df = pd.DataFrame.from_dict(client_data_for_api, orient='index',
                                                 columns=['Valeur'])
         client_info_df.index.name = 'Caractéristique'
-
         client_info_df.index = client_info_df.index.map(FEATURE_DESCRIPTIONS).fillna(
             client_info_df.index)
 
@@ -678,16 +620,15 @@ if submitted:
                 else:
                     display_df.loc[idx, 'Valeur'] = "Aujourd'hui"
 
-        st.dataframe(display_df.style.set_properties(
-            **{'background-color': '#f0f2f6', 'color': 'black'}), use_container_width=True)
+        st.dataframe(
+            display_df.style.set_properties(**{'background-color': '#f0f2f6', 'color': 'black'}),
+            use_container_width=True)
         st.write("---")
 
-        # --- Comparaison avec l'ensemble des clients ---
         st.subheader("🔬 Comparaison avec l'Ensemble des Clients")
         st.markdown(
             "Comparez les caractéristiques du client actuel avec la distribution de l'ensemble de notre base de données.")
 
-        # Liste des colonnes disponibles pour la comparaison, incluant les transformées
         comparison_features = [col for col in df_ref.columns if
                                col in FEATURE_DESCRIPTIONS or col == "_AGE_YEARS" or col == "_EMPLOYED_YEARS_CAT"]
 
@@ -705,7 +646,6 @@ if submitted:
                 plot_x_axis = selected_feature_hist_tech_name
                 client_value_for_plot_hist = None
 
-                # Obtenir la valeur du client pour l'affichage sur l'histogramme
                 if selected_feature_hist_tech_name == "_AGE_YEARS":
                     client_value_for_plot_hist = np.abs(
                         client_data_for_api.get("DAYS_BIRTH")) / 365.25
@@ -714,11 +654,10 @@ if submitted:
                         client_value_for_plot_hist = "Non-employé"
                     else:
                         client_value_for_plot_hist = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
-                        if client_value_for_plot_hist not in df_ref[
-                            '_EMPLOYED_YEARS_CAT'].cat.categories:
-                            df_ref['_EMPLOYED_YEARS_CAT'] = df_ref[
-                                '_EMPLOYED_YEARS_CAT'].cat.add_categories(
-                                [client_value_for_plot_hist])
+                    if client_value_for_plot_hist not in df_ref[
+                        '_EMPLOYED_YEARS_CAT'].cat.categories:
+                        df_ref['_EMPLOYED_YEARS_CAT'] = df_ref[
+                            '_EMPLOYED_YEARS_CAT'].cat.add_categories([client_value_for_plot_hist])
                 else:
                     client_value_for_plot_hist = client_data_for_api.get(
                         selected_feature_hist_tech_name)
@@ -726,8 +665,7 @@ if submitted:
                 fig_hist = px.histogram(df_ref, x=plot_x_axis,
                                         title=f"Distribution de '{FEATURE_DESCRIPTIONS.get(selected_feature_hist_tech_name, selected_feature_hist_tech_name)}' dans la base",
                                         marginal="box",
-                                        color_discrete_sequence=px.colors.qualitative.Plotly
-                                        )
+                                        color_discrete_sequence=px.colors.qualitative.Plotly)
 
                 if client_value_for_plot_hist is not None:
                     if pd.api.types.is_numeric_dtype(df_ref[plot_x_axis]) and isinstance(
@@ -738,16 +676,9 @@ if submitted:
                                            annotation_position="top right")
                     elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
                         fig_hist.add_annotation(
-                            x=client_value_for_plot_hist,
-                            y=1,  # Position en haut
-                            text=f"Client",
-                            showarrow=True,
-                            arrowhead=2,
-                            arrowcolor="red",
-                            font=dict(color="red"),
-                            yref="paper",
-                            xref="x"
-                        )
+                            x=client_value_for_plot_hist, y=1, text=f"Client",
+                            showarrow=True, arrowhead=2, arrowcolor="red", font=dict(color="red"),
+                            yref="paper", xref="x")
 
                 fig_hist.update_layout(height=400)
                 st.plotly_chart(fig_hist, use_container_width=True)
@@ -797,7 +728,7 @@ if submitted:
                     if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
                         client_y_val_plot = "Non-employé"
                     else:
-                        client_y_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
+                        client_y_val_plot = f"{round(np.abs(client_data_for_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
                     if client_y_val_plot not in df_temp_scatter[
                         '_EMPLOYED_YEARS_CAT'].cat.categories:
                         df_temp_scatter['_EMPLOYED_YEARS_CAT'] = df_temp_scatter[
@@ -808,13 +739,11 @@ if submitted:
                 if feature_x_tech_name in df_temp_scatter.columns and feature_y_tech_name in df_temp_scatter.columns:
                     fig_scatter = px.scatter(
                         df_temp_scatter.dropna(subset=[feature_x_tech_name, feature_y_tech_name]),
-                        x=feature_x_tech_name,
-                        y=feature_y_tech_name,
+                        x=feature_x_tech_name, y=feature_y_tech_name,
                         title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}'",
                         opacity=0.6,
                         hover_data={feature_x_tech_name: True, feature_y_tech_name: True},
-                        color_discrete_sequence=px.colors.qualitative.Plotly
-                    )
+                        color_discrete_sequence=px.colors.qualitative.Plotly)
                     if client_x_val_plot is not None and client_y_val_plot is not None:
                         x_is_numeric = pd.api.types.is_numeric_dtype(
                             df_temp_scatter[feature_x_tech_name])
@@ -824,13 +753,10 @@ if submitted:
                         if x_is_numeric and y_is_numeric and isinstance(client_x_val_plot, (
                         int, float)) and isinstance(client_y_val_plot, (int, float)):
                             fig_scatter.add_trace(go.Scatter(
-                                x=[client_x_val_plot],
-                                y=[client_y_val_plot],
-                                mode='markers',
+                                x=[client_x_val_plot], y=[client_y_val_plot], mode='markers',
                                 marker=dict(color='red', size=12, symbol='star'),
                                 name='Client Actuel',
-                                hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"
-                            ))
+                                hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"))
 
                     fig_scatter.update_layout(height=400,
                                               xaxis_title=FEATURE_DESCRIPTIONS.get(
@@ -842,48 +768,38 @@ if submitted:
                     st.plotly_chart(fig_scatter, use_container_width=True)
                 else:
                     st.warning(
-                        "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées ou n'existent pas dans les données de référence.")
+                        "Impossible de générer le graphique bi-varié car une ou plusieurs caractéristiques n'ont pas pu être traitées.")
             else:
-                st.warning(
-                    "Veuillez sélectionner deux caractéristiques pour l'analyse bi-variée.")
+                st.warning("Veuillez sélectionner deux caractéristiques pour l'analyse bi-variée.")
 
         st.markdown("---")
         st.subheader("🔍 Autres Graphiques Pertinents")
 
         if 'AMT_CREDIT' in df_ref.columns and 'NAME_EDUCATION_TYPE' in df_ref.columns:
             df_temp_box = df_ref.copy()
-
             df_temp_box['NAME_EDUCATION_TYPE'] = df_temp_box['NAME_EDUCATION_TYPE'].astype(str)
 
             fig_box = px.box(df_temp_box, x="NAME_EDUCATION_TYPE", y="AMT_CREDIT",
                              title="Montant du crédit par niveau d'éducation",
                              labels={"NAME_EDUCATION_TYPE": FEATURE_DESCRIPTIONS.get(
                                  "NAME_EDUCATION_TYPE", "Niveau d'éducation"),
-                                 "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT",
-                                                                        "Montant du crédit")},
+                                     "AMT_CREDIT": FEATURE_DESCRIPTIONS.get("AMT_CREDIT",
+                                                                            "Montant du crédit")},
                              color="NAME_EDUCATION_TYPE",
-                             color_discrete_map={
-                                 "Higher education": "blue",
-                                 "Secondary / secondary special": "green",
-                                 "Incomplete higher": "orange",
-                                 "Lower secondary": "red",
-                                 "Academic degree": "purple",
-                                 "nan": "gray"
-                             })
+                             color_discrete_map={"Higher education": "blue",
+                                                 "Secondary / secondary special": "green",
+                                                 "Incomplete higher": "orange",
+                                                 "Lower secondary": "red",
+                                                 "Academic degree": "purple", "nan": "gray"})
             client_edu = client_data_for_api.get('NAME_EDUCATION_TYPE')
             client_credit = client_data_for_api.get('AMT_CREDIT')
             if client_edu and client_credit is not None:
                 fig_box.add_trace(go.Scatter(
-                    x=[client_edu],
-                    y=[client_credit],
-                    mode='markers',
-                    marker=dict(color='red', size=12, symbol='star'),
-                    name='Client Actuel',
-                    hovertemplate=f"Client Éducation: {client_edu}<br>Client Crédit: {client_credit}"
-                ))
+                    x=[client_edu], y=[client_credit], mode='markers',
+                    marker=dict(color='red', size=12, symbol='star'), name='Client Actuel',
+                    hovertemplate=f"Client Éducation: {client_edu}<br>Client Crédit: {client_credit}"))
             fig_box.update_layout(height=400)
             st.plotly_chart(fig_box, use_container_width=True)
-
 
     except requests.exceptions.ConnectionError:
         st.error(
@@ -898,7 +814,6 @@ if submitted:
     except Exception as e:
         st.error(f"🔥 Une erreur inattendue est survenue : {e}")
 
-# --- Critères d'accessibilité WCAG (implémentation partielle) ---
 st.sidebar.markdown("---")
 st.sidebar.header("Accessibilité (WCAG)")
 st.sidebar.markdown("""
