@@ -263,8 +263,10 @@ def load_full_data(file_path):
         # --- Pré-traitement pour les graphiques de comparaison ---
         df["_AGE_YEARS"] = np.abs(df["DAYS_BIRTH"]) / 365.25
         df["_EMPLOYED_YEARS"] = np.abs(df["DAYS_EMPLOYED"]) / 365.25
-        df.loc[df["DAYS_EMPLOYED"] == 365243, "_EMPLOYED_YEARS"] = "Non-employé"
-        df["_EMPLOYED_YEARS"] = df["_EMPLOYED_YEARS"].astype('category')  # Convertir en catégorie
+
+        df['_EMPLOYED_YEARS_CAT'] = df["_EMPLOYED_YEARS"].copy()
+        df.loc[df["DAYS_EMPLOYED"] == 365243, '_EMPLOYED_YEARS_CAT'] = "Non-employé"
+        df['_EMPLOYED_YEARS_CAT'] = df['_EMPLOYED_YEARS_CAT'].astype('category')
 
         return df
     except FileNotFoundError:
@@ -276,9 +278,7 @@ def load_full_data(file_path):
 # Charger le DataFrame complet
 df_full = load_full_data("application_train.csv")  # Assurez-vous que c'est le bon nom de fichier
 
-# Filtrer df_ref pour n'avoir que les colonnes pertinentes pour les comparaisons globales
-# et prendre un échantillon pour des raisons de performance si df_full est très grand
-relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys())
+relevant_cols_for_sample = list(FEATURE_DESCRIPTIONS.keys()) + ['_EMPLOYED_YEARS_CAT']
 df_ref = df_full[df_full.columns.intersection(relevant_cols_for_sample)].sample(
     min(1000, len(df_full)), random_state=42)
 
@@ -338,8 +338,9 @@ if load_client_data_button and client_id_input != 0:
         for feature, value in client_data.items():
             if feature in st.session_state.client_data_form_values:
                 if pd.isna(value):
-                    if isinstance(st.session_state.client_data_form_values[feature], (int, float)):
-                        st.session_state.client_data_form_values[feature] = 0.0
+                    if pd.api.types.is_numeric_dtype(df_full[feature]):
+                        st.session_state.client_data_form_values[
+                            feature] = 0.0
                     elif isinstance(st.session_state.client_data_form_values[feature], str):
                         st.session_state.client_data_form_values[feature] = "XNA" if feature in [
                             "CODE_GENDER",
@@ -351,7 +352,7 @@ if load_client_data_button and client_id_input != 0:
     else:
         st.sidebar.warning(f"ID Client {client_id_input} non trouvé dans la base de données.")
         st.session_state.client_data_form_values = {
-            "EXT_SOURCE_1": 0.5,  # Reset to default if ID not found
+            "EXT_SOURCE_1": 0.5,
             "EXT_SOURCE_3": 0.5,
             "AMT_CREDIT": 250000.0,
             "DAYS_BIRTH": -15000,
@@ -379,16 +380,16 @@ with st.sidebar.form("client_data_form"):
     # Numeric inputs with session state for initial values
     EXT_SOURCE_1 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_1", "Score Source Externe 1"),
-        value=st.session_state.client_data_form_values.get("EXT_SOURCE_1"), format="%.6f",
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_1")), format="%.6f",
         min_value=0.0, max_value=1.0,
         help="Score normalisé d'une source de données externe (plus élevé = meilleur).")
     EXT_SOURCE_3 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_3", "Score Source Externe 3"),
-        value=st.session_state.client_data_form_values.get("EXT_SOURCE_3"), format="%.6f",
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_3")), format="%.6f",
         min_value=0.0, max_value=1.0, help="Score normalisé d'une autre source externe.")
     AMT_CREDIT = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_CREDIT", "Montant du crédit demandé"),
-        value=st.session_state.client_data_form_values.get("AMT_CREDIT"), min_value=0.0,
+        value=float(st.session_state.client_data_form_values.get("AMT_CREDIT")), min_value=0.0,
         max_value=5000000.0, help="Montant total du crédit demandé par le client.")
 
     days_birth_val = st.session_state.client_data_form_values.get("DAYS_BIRTH")
@@ -401,16 +402,17 @@ with st.sidebar.form("client_data_form"):
 
     EXT_SOURCE_2 = st.number_input(
         FEATURE_DESCRIPTIONS.get("EXT_SOURCE_2", "Score Source Externe 2"),
-        value=st.session_state.client_data_form_values.get("EXT_SOURCE_2"), format="%.6f",
+        value=float(st.session_state.client_data_form_values.get("EXT_SOURCE_2")), format="%.6f",
         min_value=0.0, max_value=1.0, help="Score normalisé d'une troisième source externe.")
     AMT_ANNUITY = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_ANNUITY", "Montant des annuités du prêt"),
-        value=st.session_state.client_data_form_values.get("AMT_ANNUITY"), min_value=0.0,
+        value=float(st.session_state.client_data_form_values.get("AMT_ANNUITY")), min_value=0.0,
         max_value=200000.0, help="Montant de l'annuité du prêt (versements annuels).")
     SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean = st.number_input(
         FEATURE_DESCRIPTIONS.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean",
                                  "Moyenne des échéances futures impayées"),
-        value=st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean"),
+        value=float(
+            st.session_state.client_data_form_values.get("SK_ID_CURR_CNT_INSTALMENT_FUTURE_mean")),
         min_value=0.0, max_value=100.0,
         help="Nombre moyen de versements futurs pour les crédits précédents du client.")
 
@@ -477,11 +479,12 @@ with st.sidebar.form("client_data_form"):
         help="Statut marital du client.")
     AMT_INCOME_TOTAL = st.number_input(
         FEATURE_DESCRIPTIONS.get("AMT_INCOME_TOTAL", "Revenu annuel total"),
-        value=st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL"), min_value=0.0,
+        value=float(st.session_state.client_data_form_values.get("AMT_INCOME_TOTAL")),
+        min_value=0.0,
         max_value=5000000.0, help="Revenu total annuel du client.")
     CNT_CHILDREN = st.number_input(FEATURE_DESCRIPTIONS.get("CNT_CHILDREN", "Nombre d'enfants"),
-                                   value=st.session_state.client_data_form_values.get(
-                                       "CNT_CHILDREN"), min_value=0, max_value=20, step=1,
+                                   value=int(st.session_state.client_data_form_values.get(
+                                       "CNT_CHILDREN")), min_value=0, max_value=20, step=1,
                                    help="Nombre d'enfants à charge.")
     FLAG_OWN_CAR = st.radio(FEATURE_DESCRIPTIONS.get("FLAG_OWN_CAR", "Possède une voiture"),
                             ["Y", "N"], index=["Y", "N"].index(
@@ -507,12 +510,13 @@ with st.sidebar.form("client_data_form"):
     REGION_POPULATION_RELATIVE = st.number_input(
         FEATURE_DESCRIPTIONS.get("REGION_POPULATION_RELATIVE",
                                  "Densité de population de la région"),
-        value=st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE"),
+        value=float(st.session_state.client_data_form_values.get("REGION_POPULATION_RELATIVE")),
         format="%.6f", min_value=0.0, max_value=1.0,
         help="Score normalisé de la population de la région de résidence (plus élevé = plus peuplé).")
     HOUR_APPR_PROCESS_START = st.number_input(
         FEATURE_DESCRIPTIONS.get("HOUR_APPR_PROCESS_START", "Heure de début de la demande"),
-        value=st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START"), min_value=0,
+        value=int(st.session_state.client_data_form_values.get("HOUR_APPR_PROCESS_START")),
+        min_value=0,
         max_value=23, step=1, help="Heure à laquelle la demande de prêt a commencé (format 24h).")
 
     submitted = st.form_submit_button("Calculer et Expliquer le Score")
@@ -648,32 +652,34 @@ if submitted:
 
         # --- Informations descriptives du client ---
         st.subheader("📑 Informations Descriptives Détaillées du Client")
-        client_profile_display_data = {}
-        data_to_display = client_data_for_api.copy()
-        for k, v in data_to_display.items():
-            if k == 'SK_ID_CURR':
-                continue
-            display_name = FEATURE_DESCRIPTIONS.get(k, k)
-            if k == "DAYS_BIRTH":
-                client_profile_display_data[display_name] = f"{round(abs(v) / 365.25)} ans"
-            elif k == "DAYS_EMPLOYED":
-                client_profile_display_data[
-                    display_name] = "Non employé" if v == 365243 else f"{round(abs(v) / 365.25)} ans"
-            elif k == "DAYS_ID_PUBLISH":
-                client_profile_display_data[display_name] = f"Il y a {round(abs(v) / 365.25)} ans"
-            elif k == "SK_ID_CURR_DAYS_CREDIT_ENDDATE_max":
-                if v < 0:
-                    client_profile_display_data[
-                        display_name] = f"Il y a {round(abs(v) / 365.25)} ans"
-                elif v > 0:
-                    client_profile_display_data[display_name] = f"Dans {round(v / 365.25)} ans"
-                else:
-                    client_profile_display_data[display_name] = "Aujourd'hui"
-            else:
-                client_profile_display_data[display_name] = v
 
-        st.dataframe(pd.DataFrame([client_profile_display_data]).T.rename(
-            columns={0: 'Valeur Client'}).style.set_properties(
+        client_info_df = pd.DataFrame.from_dict(client_data_for_api, orient='index',
+                                                columns=['Valeur'])
+        client_info_df.index.name = 'Caractéristique'
+
+        client_info_df.index = client_info_df.index.map(FEATURE_DESCRIPTIONS).fillna(
+            client_info_df.index)
+
+        display_df = client_info_df.copy()
+        for idx, row in display_df.iterrows():
+            if 'Âge du client' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
+                display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
+            elif 'Ancienneté d\'emploi' in idx and pd.api.types.is_numeric_dtype(row['Valeur']):
+                if row['Valeur'] == 365243:
+                    display_df.loc[idx, 'Valeur'] = "Non employé"
+                else:
+                    display_df.loc[idx, 'Valeur'] = f"{round(abs(row['Valeur']) / 365.25)} ans"
+            elif 'Date de fin maximale des crédits passés' in idx and pd.api.types.is_numeric_dtype(
+                    row['Valeur']):
+                if row['Valeur'] < 0:
+                    display_df.loc[
+                        idx, 'Valeur'] = f"Il y a {round(abs(row['Valeur']) / 365.25)} ans"
+                elif row['Valeur'] > 0:
+                    display_df.loc[idx, 'Valeur'] = f"Dans {round(row['Valeur'] / 365.25)} ans"
+                else:
+                    display_df.loc[idx, 'Valeur'] = "Aujourd'hui"
+
+        st.dataframe(display_df.style.set_properties(
             **{'background-color': '#f0f2f6', 'color': 'black'}), use_container_width=True)
         st.write("---")
 
@@ -684,8 +690,7 @@ if submitted:
 
         # Liste des colonnes disponibles pour la comparaison, incluant les transformées
         comparison_features = [col for col in df_ref.columns if
-                               col in FEATURE_DESCRIPTIONS or col in ["_AGE_YEARS",
-                                                                      "_EMPLOYED_YEARS"]]
+                               col in FEATURE_DESCRIPTIONS or col == "_AGE_YEARS" or col == "_EMPLOYED_YEARS_CAT"]
 
         col_comp1, col_comp2 = st.columns(2)
 
@@ -693,7 +698,8 @@ if submitted:
             selected_feature_hist_tech_name = st.selectbox(
                 "Sélectionnez une caractéristique à comparer (Histogramme):",
                 comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x)
+                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'
             )
 
             if selected_feature_hist_tech_name:
@@ -704,33 +710,30 @@ if submitted:
                 if selected_feature_hist_tech_name == "_AGE_YEARS":
                     client_value_for_plot_hist = np.abs(
                         client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS":
+                elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
                     if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
                         client_value_for_plot_hist = "Non-employé"
                     else:
-                        client_value_for_plot_hist = np.abs(
-                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
+                        client_value_for_plot_hist = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"  # Keep it as string for category comparison
                 else:
                     client_value_for_plot_hist = client_data_for_api.get(
                         selected_feature_hist_tech_name)
 
                 fig_hist = px.histogram(df_ref, x=plot_x_axis,
-                                        # Utilise df_ref directement avec les nouvelles colonnes
                                         title=f"Distribution de '{FEATURE_DESCRIPTIONS.get(selected_feature_hist_tech_name, selected_feature_hist_tech_name)}' dans la base",
                                         marginal="box",
                                         color_discrete_sequence=px.colors.qualitative.Plotly
                                         )
 
                 if client_value_for_plot_hist is not None:
+                    # Check if the column is numeric in df_ref (e.g., _AGE_YEARS, not _EMPLOYED_YEARS_CAT)
                     if pd.api.types.is_numeric_dtype(df_ref[plot_x_axis]) and isinstance(
                             client_value_for_plot_hist, (int, float)):
                         fig_hist.add_vline(x=client_value_for_plot_hist, line_dash="dash",
                                            line_color="red",
                                            annotation_text=f"Client: {client_value_for_plot_hist:.2f}",
                                            annotation_position="top right")
-                    elif isinstance(client_value_for_plot_hist,
-                                    str) and client_value_for_plot_hist in df_ref[
-                        plot_x_axis].cat.categories:
+                    elif selected_feature_hist_tech_name == "_EMPLOYED_YEARS_CAT":
                         fig_hist.add_annotation(
                             x=client_value_for_plot_hist,
                             y=1,  # Position en haut du graphique
@@ -753,70 +756,77 @@ if submitted:
             feature_x_tech_name = st.selectbox(
                 "Axe X : Sélectionnez la première caractéristique :",
                 comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x),
+                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
                 key="feature_x"
             )
             feature_y_tech_name = st.selectbox(
                 "Axe Y : Sélectionnez la seconde caractéristique :",
                 comparison_features,
-                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x, x),
+                format_func=lambda x: FEATURE_DESCRIPTIONS.get(x,
+                                                               x) if x != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
                 key="feature_y"
             )
 
             if feature_x_tech_name and feature_y_tech_name:
-                df_temp_scatter = df_ref.copy()  # df_ref contient déjà les colonnes transformées
+                df_temp_scatter = df_ref.copy()
 
-                # Récupérer les valeurs du client pour le graphique bi-varié
                 client_x_val_plot = None
                 if feature_x_tech_name == "_AGE_YEARS":
                     client_x_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif feature_x_tech_name == "_EMPLOYED_YEARS":
+                elif feature_x_tech_name == "_EMPLOYED_YEARS_CAT":
                     if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
                         client_x_val_plot = "Non-employé"
                     else:
-                        client_x_val_plot = np.abs(
-                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
+                        client_x_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
                 else:
                     client_x_val_plot = client_data_for_api.get(feature_x_tech_name)
 
                 client_y_val_plot = None
                 if feature_y_tech_name == "_AGE_YEARS":
                     client_y_val_plot = np.abs(client_data_for_api.get("DAYS_BIRTH")) / 365.25
-                elif feature_y_tech_name == "_EMPLOYED_YEARS":
+                elif feature_y_tech_name == "_EMPLOYED_YEARS_CAT":
                     if client_data_for_api.get("DAYS_EMPLOYED") == 365243:
                         client_y_val_plot = "Non-employé"
                     else:
-                        client_y_val_plot = np.abs(
-                            client_data_for_api.get("DAYS_EMPLOYED")) / 365.25
+                        client_y_val_plot = f"{round(np.abs(client_data_for_api.get('DAYS_EMPLOYED')) / 365.25)} ans"
                 else:
                     client_y_val_plot = client_data_for_api.get(feature_y_tech_name)
 
-                # Vérifier si les colonnes existent et sont valides pour le tracé
                 if feature_x_tech_name in df_temp_scatter.columns and feature_y_tech_name in df_temp_scatter.columns:
                     fig_scatter = px.scatter(
                         df_temp_scatter.dropna(subset=[feature_x_tech_name, feature_y_tech_name]),
-                        # Utilise les colonnes directement
                         x=feature_x_tech_name,
                         y=feature_y_tech_name,
-                        title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name)}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name)}'",
+                        title=f"Relation entre '{FEATURE_DESCRIPTIONS.get(feature_x_tech_name, feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}' et '{FEATURE_DESCRIPTIONS.get(feature_y_tech_name, feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)'}'",
                         opacity=0.6,
                         hover_data={feature_x_tech_name: True, feature_y_tech_name: True},
                         color_discrete_sequence=px.colors.qualitative.Plotly
                     )
                     if client_x_val_plot is not None and client_y_val_plot is not None:
-                        fig_scatter.add_trace(go.Scatter(
-                            x=[client_x_val_plot],
-                            y=[client_y_val_plot],
-                            mode='markers',
-                            marker=dict(color='red', size=12, symbol='star'),
-                            name='Client Actuel',
-                            hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"
-                        ))
+                        x_is_numeric = pd.api.types.is_numeric_dtype(
+                            df_temp_scatter[feature_x_tech_name])
+                        y_is_numeric = pd.api.types.is_numeric_dtype(
+                            df_temp_scatter[feature_y_tech_name])
+
+                        if x_is_numeric and y_is_numeric and isinstance(client_x_val_plot, (
+                        int, float)) and isinstance(client_y_val_plot, (int, float)):
+                            fig_scatter.add_trace(go.Scatter(
+                                x=[client_x_val_plot],
+                                y=[client_y_val_plot],
+                                mode='markers',
+                                marker=dict(color='red', size=12, symbol='star'),
+                                name='Client Actuel',
+                                hovertemplate=f"Client X: {client_x_val_plot}<br>Client Y: {client_y_val_plot}"
+                            ))
+
                     fig_scatter.update_layout(height=400,
                                               xaxis_title=FEATURE_DESCRIPTIONS.get(
-                                                  feature_x_tech_name, feature_x_tech_name),
+                                                  feature_x_tech_name,
+                                                  feature_x_tech_name) if feature_x_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)',
                                               yaxis_title=FEATURE_DESCRIPTIONS.get(
-                                                  feature_y_tech_name, feature_y_tech_name))
+                                                  feature_y_tech_name,
+                                                  feature_y_tech_name) if feature_y_tech_name != '_EMPLOYED_YEARS_CAT' else 'Ancienneté d\'emploi (catégories)')
                     st.plotly_chart(fig_scatter, use_container_width=True)
                 else:
                     st.warning(
